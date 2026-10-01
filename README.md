@@ -10,6 +10,10 @@ downloads lossless files, and [Navidrome](https://www.navidrome.org/), which str
 **curation**: every download is checked, tagged and filed by the same rules, and nothing you have already listened to
 (plays, stars, playlists) is ever lost when a file is fixed, renamed or replaced.
 
+![The fonoteca panel: library status at the top, the tools on the left and a live console on the right. A duplicate check was just simulated, so its run button is armed.](docs/panel.jpg)
+
+*The panel (`panel.py`): every tool has a button, and nothing runs for real before a simulation.*
+
 ## What it does
 
 **1. Choose what to download.** From your Spotify *extended streaming history*, `seleccion_usuario.py` picks the songs

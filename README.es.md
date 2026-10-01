@@ -10,6 +10,10 @@ archivos sin pérdida, y de [Navidrome](https://www.navidrome.org/), que los sir
 cada descarga se revisa, se etiqueta y se guarda con las mismas reglas, y nada de lo que ya escuchaste (escuchas,
 estrellas, playlists) se pierde cuando un archivo se arregla, se renombra o se reemplaza.
 
+![El panel de fonoteca: arriba el estado de la biblioteca, a la izquierda las herramientas y a la derecha la consola en vivo. Se acaba de simular la búsqueda de duplicados y su botón de ejecutar ya está encendido.](docs/panel.jpg)
+
+*El panel (`panel.py`): cada herramienta tiene su botón, y nada corre de verdad sin una simulación antes.*
+
 ## Qué hace
 
 **1. Elegir qué bajar.** Con tu *historial extendido* de Spotify, `seleccion_usuario.py` elige las canciones que de
