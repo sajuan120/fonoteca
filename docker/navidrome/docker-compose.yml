@@ -1,0 +1,30 @@
+# Navidrome para fonoteca. Copiar a la carpeta de rutas.navidrome (config.toml) y ajustar la ruta de la música.
+services:
+  navidrome:
+    image: deluan/navidrome:0.64.0      # versión fija: leer el changelog antes de subirla
+    container_name: navidrome
+    user: 1000:1000                     # el mismo usuario que es dueño de la música
+    # Red del host (no «ports»): así el cortafuegos (ufw) decide quién entra. Con «ports», Docker se salta ufw y el
+    # puerto quedaría abierto en cualquier red a la que se conecte el equipo. Abrir 4533 solo a tu red de casa / VPN.
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      ND_SCANSCHEDULE: 1h
+      ND_SESSIONTIMEOUT: 24h
+      ND_ENABLEINSIGHTSCOLLECTOR: "false"
+      # playlists solo desde _Playlists/ (Antra deja .m3u sueltos en la raíz)
+      ND_PLAYLISTSPATH: "_Playlists"
+      # IDs sin MBIDs: así agregar o corregir IDs de MusicBrainz no cambia los IDs de canciones y discos
+      # (no se pierden escuchas ni estrellas, y los discos no se parten)
+      ND_PID_TRACK: "albumid,discnumber,tracknumber,title"
+      ND_PID_ALBUM: "albumartistid,album,albumversion,releasedate"
+      # plugins opcionales (.ndp en ./plugins): listenbrainz-daily-playlist, navibeat-mixes, nd-lyrics, apple-music
+      ND_PLUGINS_ENABLED: "true"
+      ND_PLUGINS_FOLDER: /plugins
+      ND_AGENTS: "apple-music,deezer,lastfm,listenbrainz"
+      # letras incrustadas primero; nd-lyrics solo rellena lo que falta
+      ND_LYRICSPRIORITY: ".ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,nd-lyrics"
+    volumes:
+      - "./data:/data"
+      - "./plugins:/plugins"
+      - "/ruta/a/tu/musica:/music:ro"    # la misma que rutas.biblioteca

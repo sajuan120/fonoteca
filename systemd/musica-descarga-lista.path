@@ -1,0 +1,8 @@
+[Unit]
+Description=Vigila el historial de Antra para avisar cuando termina una descarga
+
+[Path]
+PathModified=%h/.local/share/Antra/history.json
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Diario 12:30: embudo de las canciones de prueba de Octo-Fiesta
+
+[Timer]
+OnCalendar=*-*-* 12:30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

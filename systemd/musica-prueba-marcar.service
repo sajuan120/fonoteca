@@ -1,0 +1,6 @@
+[Unit]
+Description=Música: género «Prueba» a las canciones de prueba de Octo-Fiesta (_Prueba/)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/fonoteca/fonoteca/prueba.py marcar

@@ -1,0 +1,47 @@
+# Configuración de fonoteca. Copiar a fonoteca/config.toml y ajustar (ese archivo es PRIVADO: está en .gitignore).
+# Todo lo que no se ponga usa el valor genérico de comun.py.
+
+[rutas]
+biblioteca = "~/Music"                   # la música: Artista/Año - Álbum/NN - Título.ext
+listas = "~/Music-listas"                # listas de enlaces para Antra y salidas para pegar
+documentos = "~/Documents"               # documentos de pendientes, auditoría y «conseguir en FLAC»
+kit = "~/Respaldo-musica"                # kit de recuperación (para subirlo a la nube)
+portadas_ia = "~/portadas-IA"            # comparación de carátulas agrandadas con IA
+navidrome = "~/navidrome"                # docker-compose.yml y data/ de Navidrome
+octo_fiesta = "~/octo-fiesta"            # docker-compose.yml de Octo-Fiesta (opcional)
+banco = "/tmp/fonoteca-banco"            # banco de pruebas (se rehace en cada corrida)
+# scripts = "~/fonoteca/scripts"         # avisos y salud semanal (por defecto, la carpeta scripts/ del repositorio)
+antra = "~/.local/share/Antra"           # history.json y config.json de Antra
+# repositorio = "~/fonoteca-publico"     # solo si mantienes una copia pública: publicar.py (y su botón en el panel)
+
+[panel]                                  # panel.py: los botones en el navegador
+puerto = 4747
+# [navidrome]
+# url = "http://localhost:4533"          # el enlace a la web de Navidrome en el panel
+
+[contacto]
+# MusicBrainz exige un User-Agent con un contacto (correo o página); se usa para todos los servicios (red.py)
+user_agent = "fonoteca/1.0 (tu-correo@ejemplo.com)"
+
+[octo_fiesta]                            # opcional: embudo de prueba y «Descubrir»
+url = "http://127.0.0.1:5274"
+usuario_robot = "robot"                  # usuario de Navidrome (no admin); su contraseña en <navidrome>/.robot
+
+# «Descubrir» semanal: uno por persona. Usuario de Navidrome → su cuenta de ListenBrainz, su carpeta de historial
+# (fonoteca/usuarios/<historial>/), el archivo .m3u y el nombre visible de la playlist.
+# [[descubrir]]
+# navidrome = "ana"
+# listenbrainz = "ana_lb"
+# historial = "Ana"
+# archivo = "Ana - Descubrir"
+# playlist = "Descubrir"
+
+# [tiendas]                              # opcional: buscar_fuentes.py
+# tidal_token = "..."                    # por defecto, el token público de la web de Tidal
+# qobuz_app_id = "..."                   # por defecto, el de play.qobuz.com (el token de sesión va en fonoteca/.qobuz_token)
+
+[privacidad]
+# publicar.py se NIEGA a copiar al repositorio un archivo que contenga cualquiera de estos textos (sin distinguir
+# mayúsculas): pon aquí tu correo, tus usuarios, tus rutas… Lo usa quien mantiene una copia pública.
+textos = []
+palabras = []

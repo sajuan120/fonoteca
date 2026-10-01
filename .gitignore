@@ -1,0 +1,22 @@
+# Lo de cada instalación nunca se sube: la configuración, las claves y las decisiones de tu biblioteca
+fonoteca/config.toml
+fonoteca/.acoustid_key
+fonoteca/.qobuz_token
+fonoteca/decisiones/
+# Lo que generan las herramientas al usarse
+fonoteca/logs/
+fonoteca/cache/
+fonoteca/respaldos/
+fonoteca/planes/
+fonoteca/usuarios/
+fonoteca/revisar_fallidas.tsv
+fonoteca/revisar_dudosas.tsv
+fonoteca/revisar_notas.md
+fonoteca/prueba-estado.json
+fonoteca/prueba-generos.json
+fonoteca/descubrir-historial.json
+# Docker: datos y claves
+docker/**/data/
+docker/**/.env
+__pycache__/
+*.pyc

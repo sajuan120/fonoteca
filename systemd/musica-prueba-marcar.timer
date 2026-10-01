@@ -1,0 +1,9 @@
+[Unit]
+Description=Cada 5 min: género «Prueba» a lo nuevo de Octo-Fiesta
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

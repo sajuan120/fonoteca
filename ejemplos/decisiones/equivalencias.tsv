@@ -1,0 +1,5 @@
+# Canciones de Spotify que SÍ están en la biblioteca con otro título o artista (título en inglés de un OST japonés,
+# otro artista en los créditos): el emparejado por spotify_id o artista+título no las ve. Revisarlas antes con la
+# duración y comun.parecido_spotify (vista previa). Las herramientas también agregan filas al quitar una copia.
+# spotify_id	ruta relativa a la biblioteca	nota
+0a1b2c3d4e5f6g7h8i9j0k	Artista/2012 - Disco/04 - Título.flac	misma grabación con otro título

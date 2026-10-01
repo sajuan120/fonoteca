@@ -1,0 +1,8 @@
+[Unit]
+Description=Chequeo semanal de salud de la biblioteca de música
+
+[Service]
+Type=oneshot
+ExecStart=%h/fonoteca/scripts/musica-salud.py
+Nice=15
+IOSchedulingClass=idle

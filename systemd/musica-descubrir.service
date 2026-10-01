@@ -1,0 +1,7 @@
+[Unit]
+Description=Música: «Descubrir» semanal (recomendaciones de ListenBrainz nunca escuchadas → Octo-Fiesta → playlist)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/fonoteca/fonoteca/descubrir.py --execute

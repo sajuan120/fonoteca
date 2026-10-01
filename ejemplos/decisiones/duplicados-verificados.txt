@@ -1,0 +1,2 @@
+# ISRC de duplicados revisados a mano (traducciones, subtítulos): duplicados.py los trata siempre como copias
+# JPV432300433  # ejemplo

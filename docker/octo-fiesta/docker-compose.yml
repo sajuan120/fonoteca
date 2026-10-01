@@ -1,0 +1,34 @@
+# Octo-Fiesta (github.com/V1ck3s/octo-fiesta) para el embudo de prueba de fonoteca (opcional).
+# Puerta PROPIA 5274 (Navidrome sigue en 4533): por la 5274 se busca también en Deezer y lo que se toca se baja en MP3
+# de prueba a <biblioteca>/_Prueba; el embudo (prueba.py) decide qué gana su FLAC y qué se borra.
+#   - network_mode host + ASPNETCORE_URLS :5274 → el cortafuegos decide quién entra, y llega a Navidrome por 127.0.0.1.
+#   - user 1000:1000 → los archivos bajados son del mismo usuario que la música.
+#   - variables en formato Section__Key (los nombres del .env de ejemplo del proyecto solo valen con SU compose).
+#   - el token de Deezer (ARL) va en .env:  Deezer__Arl=<tu ARL>   (ver la wiki de Octo-Fiesta)
+services:
+  octo-fiesta:
+    image: ghcr.io/v1ck3s/octo-fiesta:v0.11   # versión fija; leer el changelog antes de subirla
+    container_name: octo-fiesta
+    user: "1000:1000"
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://0.0.0.0:5274"
+      Library__DownloadPath: /app/downloads
+      Subsonic__Url: "http://127.0.0.1:4533"
+      Subsonic__MusicService: Deezer
+      Subsonic__StorageMode: Permanent          # se guarda y Navidrome lo registra (hace falta para contar escuchas)
+      Subsonic__DownloadMode: Track             # solo la canción que se escucha, no el disco entero
+      Subsonic__ExplicitFilter: ExplicitOnly    # oculta las versiones censuradas
+      Subsonic__EnableExternalPlaylists: "false"   # las playlists de otros usuarios de Deezer ensucian la búsqueda
+      Subsonic__PlaylistsDirectory: playlists
+      Subsonic__AutoUpgradeQuality: "false"
+      Subsonic__DisableLibraryScan: "true"      # Navidrome detecta archivos nuevos solo
+      Subsonic__FolderTemplate: "{artist}/{year} - {album}/{track} - {title}"   # la misma forma que la biblioteca
+      Deezer__Quality: MP3_128
+      Lyrics__Enabled: "true"
+      Lyrics__WriteLrcFile: "false"
+    volumes:
+      - /ruta/a/tu/musica/_Prueba:/app/downloads

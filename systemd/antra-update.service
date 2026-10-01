@@ -1,0 +1,6 @@
+[Unit]
+Description=Check for new Antra release
+
+[Service]
+Type=oneshot
+ExecStart=%h/fonoteca/scripts/antra-update.sh

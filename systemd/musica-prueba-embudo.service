@@ -1,0 +1,6 @@
+[Unit]
+Description=Música: embudo de las canciones de prueba (promover a FLAC / reemplazar / avisar / borrar)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/fonoteca/fonoteca/prueba.py revisar --execute

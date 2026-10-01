@@ -1,0 +1,7 @@
+[Unit]
+Description=Aviso "Antra terminó → procesar"
+
+[Service]
+Type=oneshot
+ExecStart=%h/fonoteca/scripts/musica-descarga-lista.sh
+TimeoutStartSec=infinity
