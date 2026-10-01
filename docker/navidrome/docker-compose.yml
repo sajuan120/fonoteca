@@ -1,7 +1,7 @@
 # Navidrome para fonoteca. Copiar a la carpeta de rutas.navidrome (config.toml) y ajustar la ruta de la música.
 services:
   navidrome:
-    image: deluan/navidrome:0.64.0      # versión fija: leer el changelog antes de subirla
+    image: deluan/navidrome:0.64.2      # versión fija: leer el changelog antes de subirla
     container_name: navidrome
     user: 1000:1000                     # el mismo usuario que es dueño de la música
     # Red del host (no «ports»): así el cortafuegos (ufw) decide quién entra. Con «ports», Docker se salta ufw y el
