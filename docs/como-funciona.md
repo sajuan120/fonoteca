@@ -133,6 +133,14 @@ Es el único comando después de cada descarga. Sin `--execute` simula hasta el 
   migrar, y la siguiente corrida las purgaba. Hoy `comun.cambiar_rutas` deja cada cambio en `logs/nd-pendientes/`,
   `nd_actualizar.py` los aplica todos en orden (y los pasa a `nd-aplicados/` solo si terminó bien), purga solo lo que un
   log explica, y si queda algo faltante sin explicar, o la biblioteca parece desmontada, no purga nada y avisa.
+- **Dos procesos sobre la misma biblioteca se pisan.** El embudo de las 12:30, el timer de `prueba.py marcar`, el panel
+  y una herramienta en la terminal escribían a la vez; todo lo que toca la biblioteca, el state de Antra, las playlists
+  o Navidrome toma antes `comun.cerrojo()` (un `flock` sobre `DATOS/.cerrojo`, se suelta solo al terminar el proceso,
+  también si lo matan). Quien ya lo tiene se lo hereda a los pasos que lanza por `FONOTECA_CERROJO`; quien no, espera
+  avisando quién lo tiene y a los 15 min sale con error.
+- **Un JSON a medio escribir mataba el timer cada 5 minutos.** Los JSON de estado y cachés se escriben con
+  `comun.guardar_json` (temporal + `os.replace`: entero o nada) y se leen con `comun.leer_json`, que aparta uno roto a
+  `<nombre>.roto-<fecha>`, avisa y sigue con el valor por defecto.
 - **Navidrome rellena el Instant Mix con canciones al azar del mismo género** cuando los servicios externos no dan
   parecidas. Un género artificial para todo un grupo de canciones las encierra en su propio mix.
 - **Antra deja sin fecha** algunas canciones bajadas sueltas, y Navidrome parte un disco sin YEAR o con distinto artista

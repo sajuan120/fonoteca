@@ -9,12 +9,13 @@ Si un disco tiene ALBUMARTIST distintos, a todas sus pistas se les pone el artis
 (NOMBRE: nombre preferido para algunos, decisiones/artistas-nombres.tsv). También a las pistas del mismo álbum SIN ese ID que
 estén en la MISMA carpeta (nunca a otro disco homónimo de otra carpeta).
 """
-import collections, json, os, sys
+import collections, os, sys
 from audio import abrir, es_audio
-from comun import ROOT, plan_path, SKIP, plano, decision
+from comun import ROOT, plan_path, SKIP, plano, decision, cerrojo, guardar_json
 from red import Cache, pedir_json
 
 EXECUTE = "--execute" in sys.argv
+if EXECUTE: cerrojo("artista_album.py")
 # artista del disco que MusicBrainz escribe distinto → nombre en la biblioteca: decisiones/artistas-nombres.tsv
 _np = decision("artistas-nombres.tsv")
 NOMBRE = dict(l.rstrip("\n").split("\t")[:2] for l in open(_np, encoding="utf-8")
@@ -75,7 +76,7 @@ for (rg, _), items in grupos.items():
     cambios = [(p, (abrir(p).tags.get("albumartist") or [""])[0]) for p in sorted(en_disco) + hermanas]
     plan.append(dict(album=items[0]["album"], releasegroup=rg, propuesta=propuesta, actual=dict(actuales),
                      cambios=[(p, a) for p, a in cambios if a != propuesta]))
-json.dump(plan, open(plan_path("plan-albumartist.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+guardar_json(plan_path("plan-albumartist.json"), plan, indent=1)
 
 n_cambios = sum(len(p["cambios"]) for p in plan)
 print(f"Discos con ALBUMARTIST mezclado: {len(plan)} | canciones a cambiar: {n_cambios}")

@@ -21,7 +21,7 @@ Por canción:
 import collections, datetime, json, os, sys
 from audio import abrir, audios
 
-from comun import ROOT, LOGS, SKIP, grabacion_corresponde, titulo_base, primer_artista, base_disco
+from comun import ROOT, LOGS, SKIP, grabacion_corresponde, titulo_base, primer_artista, base_disco, cerrojo
 from red import Cache, pedir_json
 
 dz, mb = Cache("deezer-cache.json"), Cache("mb-isrc-cache.json")   # red.py: caché compartida, se guarda sola
@@ -40,6 +40,7 @@ if "--revert" in sys.argv:
     revert(sys.argv[sys.argv.index("--revert") + 1]); sys.exit()
 
 folder = sys.argv[1]; EXECUTE = "--execute" in sys.argv   # "." = toda la biblioteca
+if EXECUTE: cerrojo("enriquecer.py")
 files, _seen = [], set()
 for _f in sorted(audios(os.path.join(ROOT, folder))):
     if os.path.relpath(_f, ROOT).split("/")[0] in SKIP or os.stat(_f).st_ino in _seen: continue

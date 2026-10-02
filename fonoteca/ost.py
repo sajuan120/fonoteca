@@ -20,7 +20,7 @@ Después (con --seguir se hace solo): replaygain.py <carpetas> --forzar --execut
 """
 import datetime, glob, json, os, re, subprocess, sys
 from audio import abrir, es_audio
-from comun import HERE, ROOT, RESPALDOS, LOGS, antra_abierto, cambiar_rutas, decision, state_leer, guardar_json
+from comun import HERE, ROOT, RESPALDOS, LOGS, antra_abierto, cambiar_rutas, decision, state_leer, guardar_json, leer_json, cerrojo
 
 EXECUTE, SEGUIR = "--execute" in sys.argv, "--seguir" in sys.argv
 if any(a in ("-h", "--help") for a in sys.argv[1:]):
@@ -43,8 +43,9 @@ def recuperar():
     """Un agrupado cortado entre los dos pasos del renombrado dejaba archivos .ost-tmp-N que nadie veía (2 oct): si quedó
     ost-en-curso.json se terminan esos renombres y se anotan; un .ost-tmp-N sin registro recibe el nombre de sus etiquetas."""
     if os.path.exists(EN_CURSO):
-        ec = json.load(open(EN_CURSO, encoding="utf-8"))
+        ec = leer_json(EN_CURSO, {"tmp": []})
         print(f"⚠️ Quedó un agrupado a medias ({ec.get('fecha', '?')}): termino los renombres.")
+        cerrojo("ost.py (recuperar)")
         mover = {}
         for viejo, tp, n in ec["tmp"]:
             if os.path.exists(tp) and not os.path.exists(n):
@@ -118,6 +119,7 @@ if errores: sys.exit("\n".join(errores))
 if not EXECUTE: sys.exit("Simulación: no se tocó nada. Usa --execute (y --seguir para ReplayGain, géneros y Navidrome).")
 if antra_abierto(): sys.exit("Antra está abierto: ciérralo y reintenta.")
 
+cerrojo("ost.py")
 state_leer()   # 2 oct: falla ANTES de tocar nada si el state de Antra no tiene su formato
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 mover, finales = {}, []

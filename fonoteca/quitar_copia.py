@@ -23,7 +23,7 @@ Lo quitado va a respaldos/quitadas-<hora>/ (no se borra: se borra a mano una vez
 """
 import datetime, os, shutil, sys
 from audio import abrir
-from comun import ROOT, RESPALDOS, antra_abierto, cambiar_rutas, state_leer
+from comun import ROOT, RESPALDOS, antra_abierto, cambiar_rutas, state_leer, cerrojo
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -59,6 +59,7 @@ if not EXECUTE:
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo y reintenta.")
 
+cerrojo("quitar_copia.py")
 state_leer()   # 2 oct: falla ANTES de mover nada si el state de Antra no tiene su formato (antes, después de mover y sin log)
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 resp = os.path.join(RESPALDOS, f"quitadas-{stamp}")

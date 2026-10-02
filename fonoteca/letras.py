@@ -14,7 +14,7 @@ Log con valores anteriores: letras-log-<fecha>.json (revertible).
 import collections, datetime, json, os, re, sys, urllib.parse, urllib.request
 from audio import abrir, audios
 
-from comun import ROOT, log_path, es_de_album, primer_artista
+from comun import ROOT, log_path, es_de_album, primer_artista, cerrojo
 from red import Cache, pedir_json
 TS = re.compile(r"^\[\d+:\d+(?:[.:]\d+)?\]", re.M)
 KEYS = ("lyrics", "syncedlyrics", "lrclib_instrumental")
@@ -30,6 +30,7 @@ if "--revert" in sys.argv:
     sys.exit(f"revertidos {len(log['cambios'])}")
 
 EXECUTE = "--execute" in sys.argv
+if EXECUTE: cerrojo("letras.py")
 cache = Cache("lrclib-cache.json", cada=200)   # red.py
 
 FALLOS = dict(cache.get("__no_encontradas__") or {})   # url → fecha en que LRCLIB no la tenía

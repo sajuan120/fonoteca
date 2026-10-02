@@ -10,13 +10,13 @@ playlist antes del borrado). Si una canción con ese spotify_id vuelve a estar e
 playlist donde estaba, junto a sus mismas vecinas de antes (si ya no están, al final). Nunca la repite.
 Lo devuelto queda en logs/playlists-devueltas.json (no se vuelve a insertar si después la quitas a mano).
 """
-import datetime, json, os, shutil, sys
-from comun import ROOT, LOGS, RESPALDOS, borradas as leer_borradas, rutas_por_sid
+import datetime, os, shutil, sys
+from comun import ROOT, LOGS, RESPALDOS, borradas as leer_borradas, rutas_por_sid, leer_json, guardar_json, cerrojo
 
 EXECUTE = "--execute" in sys.argv
 PL = os.path.join(ROOT, "_Playlists")
 HECHAS = os.path.join(LOGS, "playlists-devueltas.json")
-hechas = json.load(open(HECHAS, encoding="utf-8")) if os.path.exists(HECHAS) else {}
+hechas = leer_json(HECHAS, {})
 
 # canciones borradas que estaban en alguna playlist, y dónde están hoy (por spotify_id)
 borradas = [(b["ldir"], b["old"], b["sid"], b["playlists"]) for b in leer_borradas() if b["playlists"]]
@@ -59,6 +59,7 @@ for ldir, old, sid, pls in borradas:
 
 print(f"{n} canciones a devolver a sus playlists" + ("" if EXECUTE else " (simulación: no se escribió nada)"))
 if EXECUTE and cambios:
+    cerrojo("devolver_playlists.py")
     bak = os.path.join(RESPALDOS, f"playlists-antes-devolver-{datetime.datetime.now():%Y%m%d-%H%M%S}")
     os.makedirs(bak)
     for m, L in cambios.items():
@@ -67,4 +68,4 @@ if EXECUTE and cambios:
         open(mp, "w", encoding="utf-8").write("\n".join(L) + "\n")
     print(f"Copia de las playlists antes del cambio: {bak}")
 if EXECUTE:
-    json.dump(hechas, open(HECHAS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    guardar_json(HECHAS, hechas, indent=1)

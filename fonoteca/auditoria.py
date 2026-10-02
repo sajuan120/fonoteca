@@ -26,7 +26,7 @@ import base64, collections, concurrent.futures as cf, datetime, difflib, hashlib
 import numpy as np
 from red import Cache, pedir_json
 from audio import abrir, es_audio, RE_EXT, verificar, con_perdida
-from comun import base_disco, nivel_titulo, decision, DOC_AUDITORIA, NAVIDROME_DB, plano, ROOT, plan_path, cache_path, clave_titulo, clave_artista, _plano, parecido_spotify, grabacion_corresponde
+from comun import base_disco, nivel_titulo, decision, DOC_AUDITORIA, NAVIDROME_DB, plano, ROOT, plan_path, cache_path, clave_titulo, clave_artista, _plano, parecido_spotify, grabacion_corresponde, leer_json, guardar_json
 
 SIN_AUDIO, SIN_RED = "--sin-audio" in sys.argv, "--sin-red" in sys.argv
 DOC, NDDB = DOC_AUDITORIA, NAVIDROME_DB   # config.toml
@@ -88,7 +88,7 @@ for d in carpetas: por_art[d.split(os.sep)[0]].append(d)
 # ---------------------------------------------------------------- 1. integridad (flac -t) y huellas, con caché
 def cacheado(nombre):
     p = cache_path(nombre)
-    return (json.load(open(p)) if os.path.exists(p) else {}), p
+    return leer_json(p, {}), p   # 2 oct: una caché truncada se aparta en vez de tumbar la auditoría
 def vigente(c, x): return c and c[0] == x["size"] and c[1] == x["mtime"]
 ft, ftp = cacheado("auditoria-flac-t.json")
 pend = [r for r in flacs if not vigente(ft.get(r), R[r])]
@@ -102,7 +102,7 @@ if pend and not SIN_AUDIO:
         for n, (rel, rc, msg) in enumerate(ex.map(probar, pend)):
             ft[rel] = [R[rel]["size"], R[rel]["mtime"], rc, msg]
             if n % 500 == 0: log(f"  {n}/{len(pend)}")
-    json.dump(ft, open(ftp, "w"))
+    guardar_json(ftp, ft)
 hu, hup = cacheado("auditoria-huellas.json")
 pend = [r for r in album_rels if not vigente(hu.get(r), R[r])]
 if pend and not SIN_AUDIO:
@@ -118,7 +118,7 @@ if pend and not SIN_AUDIO:
         for n, (rel, b) in enumerate(ex.map(huella, pend)):
             hu[rel] = [R[rel]["size"], R[rel]["mtime"], b]
             if n % 500 == 0: log(f"  {n}/{len(pend)}")
-    json.dump(hu, open(hup, "w"))
+    guardar_json(hup, hu)
 FP = {r: np.frombuffer(base64.b64decode(hu[r][2]), dtype=np.uint32) for r in album_rels if vigente(hu.get(r), R[r]) and hu[r][2]}
 _POP = np.array([bin(i).count("1") for i in range(65536)], dtype=np.uint8)
 def parecido(a, b, offsets=None):
@@ -161,7 +161,7 @@ def contra_spotify(rel):
     if SIN_RED or not sid: return None
     s = parecido_spotify(sid, os.path.join(ROOT, rel))
     if s is not None:
-        sp[rel] = [x["size"], x["mtime"], sid, s]; json.dump(sp, open(spp, "w"))
+        sp[rel] = [x["size"], x["mtime"], sid, s]; guardar_json(spp, sp)
     return s
 
 # ---------------------------------------------------------------- informe
@@ -548,8 +548,8 @@ seccion("arreglar", "id_equivocado", "Mismo ID de grabación/ISRC pero audio dis
 # cada ID de grabación contra su grabación (título, duración, ISRC: comun.grabacion_corresponde). Los datos de MusicBrainz y
 # los que se dejan a propósito (el audio confirma el ID) los guarda ids_mb.py; esta auditoría no consulta MusicBrainz.
 _gp, _ap = cache_path("ids-mb-grabaciones.json"), decision("ids-mb-aceptados.json")
-GRABS = json.load(open(_gp, encoding="utf-8")) if os.path.exists(_gp) else {}
-ACEPT = json.load(open(_ap, encoding="utf-8")) if os.path.exists(_ap) else {}
+GRABS = leer_json(_gp, {})
+ACEPT = leer_json(_ap, {})
 id_ajeno, id_sin_datos = [], 0
 for r in album_rels:
     rid = g(R[r], "musicbrainz_trackid")

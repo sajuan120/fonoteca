@@ -10,10 +10,11 @@ Cómo elige el disco: entre los discos de esa grabación en MusicBrainz, el que 
 import collections, json, os, sys
 from audio import abrir, es_audio
 
-from comun import ROOT, log_path, SKIP, base_disco
+from comun import ROOT, log_path, SKIP, base_disco, cerrojo
 from red import Cache, pedir_json
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXECUTE = "--execute" in sys.argv
+if EXECUTE: cerrojo("mb_disco.py")
 carpetas = [a for a in sys.argv[1:] if not a.startswith("--")] or ["."]
 cache = Cache("mb-disco-cache.json")   # red.py
 

@@ -22,7 +22,7 @@ import datetime, os, re, shutil, subprocess, sys, tempfile
 from mutagen.flac import Picture
 from audio import abrir, con_perdida, es_audio
 from comun import (ROOT, a_conseguir, antra_abierto, clave_artista, clave_titulo, dura_distinto, duracion_spotify,
-                   parecido_spotify, spotify_cancion)
+                   parecido_spotify, spotify_cancion, cerrojo)
 from red import Cache, pedir_bytes, pedir_json
 
 args = sys.argv[1:]
@@ -97,6 +97,7 @@ if not EXECUTE:
     sys.exit(f"\nSimulación: {len(plan)} archivo(s), {sum(1 for x in plan if x['sid'])} eran de las que faltaban. Usa --execute.")
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo y reintenta.")
+cerrojo("importar_manual.py")
 os.makedirs(DEST, exist_ok=True)
 for x in plan:
     n, dst = 2, x["dest"]

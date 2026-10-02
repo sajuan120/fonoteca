@@ -22,7 +22,7 @@ import re
 
 from audio import abrir, es_audio
 
-from comun import ROOT, antra_abierto, RESPALDOS, SKIP, guardar_json
+from comun import ROOT, antra_abierto, RESPALDOS, SKIP, guardar_json, cerrojo
 import sys, shutil, time
 ARGS = sys.argv[1:]
 EXECUTE = "--execute" in ARGS
@@ -210,9 +210,8 @@ new_albums = sorted({os.path.dirname(o["dst"]) for o in links if not o["album_ex
 stats = {"audios_unicos": len(names), "link": len(links), "drop": len(drops),
          "renombrar_carpetas": len(dir_rename), "colisiones": len(collisions),
          "state_map": len(state_map), "albumes_nuevos": len(new_albums)}
-json.dump({"root": ROOT, "dissolve": sorted(DISSOLVE), "dir_rename": dir_rename, "links": links, "drops": drops,
-           "collisions": collisions, "state_map": state_map, "stats": stats},
-          open(OUT + ".json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+guardar_json(OUT + ".json", {"root": ROOT, "dissolve": sorted(DISSOLVE), "dir_rename": dir_rename, "links": links, "drops": drops,
+                             "collisions": collisions, "state_map": state_map, "stats": stats}, indent=1)
 with open(OUT + ".txt", "w", encoding="utf-8") as f:
     for a, b in dir_rename.items():
         f.write(f"rename-dir {a}\n      -> {b}\n")
@@ -244,6 +243,7 @@ P = lambda rel: os.path.join(root, rel)
 # ---------- 0. chequeos ----------
 if EXECUTE and antra_abierto():
     sys.exit("Antra está corriendo. Ciérralo y reintenta. No se hace nada.")
+if EXECUTE: cerrojo("repartir.py")
 
 for a, b in plan["dir_rename"].items():
     if not os.path.isdir(P(a)) or os.path.exists(P(b)):

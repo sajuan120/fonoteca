@@ -12,7 +12,7 @@ Salida: acoustid-resultado-<fecha>.json. Clave en .acoustid_key junto a los scri
 import json, os, subprocess, sys, urllib.parse, urllib.request
 from audio import abrir
 
-from comun import ROOT, ACOUSTID_KEY as KEY, LOGS, log_path, titulo_base, primer_artista, _calif, _VERSION
+from comun import ROOT, ACOUSTID_KEY as KEY, LOGS, log_path, titulo_base, primer_artista, leer_json, guardar_json, _calif, _VERSION
 from red import pedir_json
 
 def version(s):
@@ -23,14 +23,14 @@ def version(s):
 
 from concurrent.futures import ThreadPoolExecutor
 PARTIAL = os.path.join(LOGS, "acoustid-parcial.json")
-res = json.load(open(PARTIAL)) if os.path.exists(PARTIAL) else {}
+res = leer_json(PARTIAL, {})
 paths = [l.strip() for l in open(sys.argv[1]) if l.strip() and l.strip() not in res]
 if not KEY:   # sin clave de AcoustID: nada que consultar; el procesado decide con la canción de Spotify
     print("Sin clave de AcoustID (.acoustid_key): no se consulta; las sospechosas se comparan solo con Spotify.")
     for rel in paths:
         res[rel] = dict(veredicto="DESCONOCIDA", tags="", audio_es="(sin clave de AcoustID)")
     out = log_path("acoustid-resultado")
-    json.dump(res, open(out, "w"), ensure_ascii=False, indent=1)
+    guardar_json(out, res, indent=1)
     print(f"{dict(__import__('collections').Counter(v['veredicto'] for v in res.values()))} → {out}")
     sys.exit(0)
 def fpcalc(rel):
@@ -74,9 +74,9 @@ for i, (rel, fp) in enumerate(zip(paths, fps)):
                                   "artists": [(x.get("id"), x["name"]) for x in rc_.get("artists", [])]}) for sc_, rc_ in recs[:8]])
     if v != "OK": print(f"{v:11} {rel[:70]:70} {('→ ' + who) if who else ''}", flush=True)
     if i % 100 == 0:
-        json.dump(res, open(PARTIAL, "w"), ensure_ascii=False); print(f"  ... {i}/{len(paths)}", flush=True)
+        guardar_json(PARTIAL, res); print(f"  ... {i}/{len(paths)}", flush=True)
 out = log_path("acoustid-resultado")
-json.dump(res, open(out, "w"), ensure_ascii=False, indent=1)
+guardar_json(out, res, indent=1)
 if os.path.exists(PARTIAL): os.remove(PARTIAL)
 from collections import Counter
 print(dict(Counter(x["veredicto"] for x in res.values())), "→", out)

@@ -23,7 +23,7 @@ replaygain.py <carpetas> --forzar --execute y nd_actualizar.py (aplica los logs 
 """
 import datetime, os, re, shutil, subprocess, sys
 from audio import abrir, es_audio
-from comun import HERE, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, clave_titulo, dura_distinto, state_leer, guardar_json
+from comun import HERE, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, clave_titulo, dura_distinto, state_leer, guardar_json, cerrojo
 
 args = sys.argv[1:]
 EXECUTE, SEGUIR = "--execute" in args, "--seguir" in args
@@ -109,6 +109,7 @@ if not EXECUTE:
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo y reintenta.")
 
+cerrojo("unir_discos.py")
 state_leer()   # 2 oct: falla ANTES de mover nada si el state de Antra no tiene su formato
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 resp = os.path.join(RESPALDOS, f"quitadas-{stamp}")

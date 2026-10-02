@@ -19,7 +19,7 @@ Con --execute:
 """
 import collections, datetime, glob, json, os, shutil, sys, zipfile
 from audio import abrir, es_audio, con_perdida
-from comun import ROOT, HERE, RESPALDOS, LOGS, LISTAS, antra_abierto, es_de_album, clave_titulo, cambiar_rutas, decision, state_leer, guardar_json
+from comun import ROOT, HERE, RESPALDOS, LOGS, LISTAS, antra_abierto, es_de_album, clave_titulo, cambiar_rutas, decision, state_leer, guardar_json, cerrojo
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -101,6 +101,7 @@ if not plan:
     sys.exit(0)
 
 # ---------- ejecutar ----------
+cerrojo("duplicados.py")
 state_leer()   # 2 oct: falla ANTES de mover nada si el state de Antra no tiene su formato (antes fallaba después, sin log)
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 dest = os.path.join(RESPALDOS, f"duplicados-{stamp}")

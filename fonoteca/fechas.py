@@ -14,7 +14,7 @@ mutagen escribe en el mismo archivo (inodo), así que los hardlinks se mantienen
 import json, os, re, sys
 from collections import Counter
 from audio import abrir, es_audio
-from comun import ROOT, SKIP, plan_path, log_path, antra_abierto
+from comun import ROOT, SKIP, plan_path, log_path, antra_abierto, cerrojo, guardar_json
 
 if "--revert" in sys.argv:
     log = json.load(open(sys.argv[sys.argv.index("--revert") + 1]))
@@ -63,7 +63,7 @@ for dp, dns, fns in os.walk(ROOT):
         seen.add(ino)
         if d != destino or (y and y[:4] != destino[:4]):
             plan.append({"path": os.path.join(rel, f), "old_date": d, "old_year": y, "new_date": destino, "folder_year": fy or ""})
-json.dump(plan, open(plan_path("plan-dates.json"), "w"), ensure_ascii=False, indent=1)
+guardar_json(plan_path("plan-dates.json"), plan, indent=1)
 
 tipos = Counter("sin DATE" if not x["old_date"] else "año distinto" if x["old_date"][:4] != x["new_date"][:4]
                 else "mismo año, otra fecha" for x in plan)
@@ -73,6 +73,7 @@ if not EXECUTE:
     sys.exit(0)
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo antes de escribir tags.")
+cerrojo("fechas.py")
 
 # ---------- aplicar ----------
 LOG = log_path("fechas-log")
@@ -82,7 +83,7 @@ for e in plan:
         a = abrir(os.path.join(ROOT, e["path"]))
         viejo = {"DATE": a["date"][0] if "date" in a else None, "YEAR": a["year"][0] if "year" in a else None}
         log.append({"path": e["path"], "old": viejo})
-        json.dump(log, open(LOG, "w"), ensure_ascii=False, indent=1)   # log antes de tocar
+        guardar_json(LOG, log, indent=1)   # log antes de tocar
         a["DATE"] = e["new_date"]
         if viejo["YEAR"] is not None:
             a["YEAR"] = e["new_date"][:4]

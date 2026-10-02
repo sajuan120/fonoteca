@@ -21,7 +21,7 @@ Salida: <carpeta de listas>/<Nombre>/<NOMBRE>-<n>.txt (enlaces para pegar en una
 """
 import collections, datetime, glob, json, os, re, sys, urllib.parse, urllib.request, zipfile
 from audio import abrir, es_audio
-from comun import ROOT, LISTAS, cache_path, es_de_album, clave_titulo, clave_artista
+from comun import ROOT, LISTAS, cache_path, es_de_album, clave_titulo, clave_artista, leer_json, guardar_json
 from red import Cache, pagina, pedir_json
 
 args = sys.argv[1:]
@@ -118,7 +118,7 @@ def ids_de(v):
     txt = open(v, encoding="utf-8").read() if os.path.exists(v) else v.replace(",", "\n")
     return [tid(l) for l in txt.splitlines() if l.strip() and not l.startswith("#")]
 EMB = cache_path("embed-playlists.json")
-emb = json.load(open(EMB)) if os.path.exists(EMB) else {}
+emb = leer_json(EMB, {})
 def playlist(pid):
     if pid not in emb:
         h = pagina(f"https://open.spotify.com/embed/playlist/{pid}")   # red.py: 1 cada 1,5 s
@@ -128,7 +128,7 @@ def playlist(pid):
         except Exception:   # sin red o sin respuesta: NO se guarda (antes quedaba como playlist vacía para siempre)
             return {"nombre": f"(no se pudo leer {pid})", "canciones": []}
         emb[pid] = {"nombre": e["name"], "canciones": [(t["uri"].split(":")[-1], t["title"], t["subtitle"]) for t in e["trackList"]]}
-        json.dump(emb, open(EMB, "w"), ensure_ascii=False)
+        guardar_json(EMB, emb)
     return emb[pid]
 for pid in ids_de(opt("--propias")):
     pl = playlist(pid); n0 = len(sel)

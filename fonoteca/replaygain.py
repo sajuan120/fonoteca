@@ -13,13 +13,14 @@ Navidrome los manda a las apps (web, Amperfy, Symfonium...), que ajustan el volu
 import collections, json, math, os, re, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 from audio import abrir, es_audio
-from comun import ROOT, es_de_album, log_path
+from comun import ROOT, es_de_album, log_path, cerrojo
 
 REF = -18.0
 args = sys.argv[1:]
 if any(a in ("-h", "--help") for a in args) or any(a.startswith("--") and a not in ("--execute", "--forzar") for a in args):
     sys.exit(__doc__)
 EXECUTE, FORZAR = "--execute" in args, "--forzar" in args
+if EXECUTE: cerrojo("replaygain.py")
 carpetas = [os.path.join(ROOT, a) for a in args if not a.startswith("--")]
 
 def medir(p):

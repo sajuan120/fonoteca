@@ -15,7 +15,7 @@ import json, os, sys
 from collections import Counter
 from audio import abrir, es_audio
 
-ROOT, SKIP = __import__('comun').ROOT, __import__('comun').SKIP
+ROOT, SKIP, cerrojo, guardar_json = (lambda c: (c.ROOT, c.SKIP, c.cerrojo, c.guardar_json))(__import__('comun'))
 
 
 def unique_files():
@@ -45,8 +45,7 @@ def dump(out):
             data[str(ino)] = {'path': p, 'tags': read_tags(p)}
         except Exception:   # archivo a medio escribir (Antra bajando) o dañado: no se respalda, se avisa
             saltados.append(p)
-    with open(out, 'w') as fh:
-        json.dump(data, fh, ensure_ascii=False)
+    guardar_json(out, data)   # 2 oct: entero o nada: un respaldo truncado no sirve para restaurar
     print(f'{len(data)} audios respaldados en {out}' + (f' ({len(saltados)} ilegibles saltados, p. ej. {saltados[0]})' if saltados else ''))
 
 
@@ -85,6 +84,7 @@ def diff(inp):
 
 
 def restore(inp):
+    cerrojo("tags_backup.py restore")
     data, cur = load(inp), current_by_inode()
     n = 0
     for ino, e in data.items():
@@ -108,6 +108,7 @@ def desde_kit(inp, execute):
     import gzip
     from comun import es_de_album
     datos = json.load(gzip.open(inp, "rt", encoding="utf-8"))
+    if execute: cerrojo("tags_backup.py desde-kit")
     iguales = cambian = 0
     encontradas = set()
     for d, _, fs in os.walk(ROOT):

@@ -17,7 +17,7 @@ pendientes y se quita sola cuando la canción entra a la biblioteca) y termina c
 """
 import datetime, json, os, sys
 from audio import abrir
-from comun import ROOT, antra_abierto, anotar_fallida, cambiar_rutas, log_path, sin_procesar, state_leer
+from comun import ROOT, antra_abierto, anotar_fallida, cambiar_rutas, log_path, sin_procesar, state_leer, cerrojo
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -71,6 +71,7 @@ if not EXECUTE:
     sys.exit("Simulación: no se movió nada. Usa --execute.")
 
 # ---------- aplicar ----------
+cerrojo("juntar_descarga.py")
 log = {"carpeta": carpeta, "url": url, "movidos": [], "carpetas_borradas": []}
 state_leer()   # falla ANTES de mover nada si el state de Antra no tiene su formato de siempre
 os.makedirs(DEST, exist_ok=True)

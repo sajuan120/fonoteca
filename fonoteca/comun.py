@@ -87,6 +87,50 @@ def log_pendiente(nombre, mover, extra=None):
                       "cambios": cambios, "quitadas": quitadas, **(extra or {})})
     return lp
 
+def leer_json(ruta, defecto=None):
+    """Lee un JSON de estado o caché. Si está roto (un corte al escribirlo, antes de guardar_json), lo aparta a
+    <ruta>.roto-<fecha>, avisa y devuelve `defecto`: ningún timer se queda muerto por un archivo truncado (2 oct)."""
+    import json, sys
+    if not os.path.exists(ruta):
+        return defecto
+    try:
+        return json.load(open(ruta, encoding="utf-8"))
+    except ValueError as e:
+        roto = f"{ruta}.roto-{datetime.datetime.now():%Y%m%d-%H%M%S}"
+        os.replace(ruta, roto)
+        print(f"⚠️ {os.path.basename(ruta)} estaba roto ({e}): apartado a {roto}; se sigue sin él.", file=sys.stderr, flush=True)
+        return defecto
+
+CERROJO = os.path.join(DATOS, ".cerrojo")   # 2 oct: un solo proceso escribe en la biblioteca o en Navidrome a la vez
+_CERROJO_FD = []
+
+def cerrojo(quien, esperar=900):
+    """Toma el cerrojo común (fcntl.flock sobre DATOS/.cerrojo) antes de escribir en la biblioteca, el state de Antra,
+    las playlists o Navidrome: así el embudo de las 12:30, el panel, una Konsole y un timer no se pisan. Espera hasta
+    `esperar` segundos (avisando quién lo tiene) y si no, sale con error. Los procesos que lanza quien ya lo tiene
+    (procesar_descarga.py → sus pasos, --seguir, el panel → sus scripts) lo heredan por FONOTECA_CERROJO y no esperan.
+    Se suelta solo al terminar el proceso (también si lo matan)."""
+    import fcntl, sys, time
+    if os.environ.get("FONOTECA_CERROJO") or _CERROJO_FD:
+        return
+    fd = open(CERROJO, "a+", encoding="utf-8")
+    t0, avisado = time.time(), False
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            fd.seek(0); dueno = fd.read().strip() or "otro proceso"
+            if not avisado:
+                print(f"Esperando el cerrojo de la biblioteca (lo tiene {dueno})…", flush=True); avisado = True
+            if time.time() - t0 > esperar:
+                sys.exit(f"No pude tomar el cerrojo de la biblioteca en {esperar} s: lo tiene {dueno}. Cuando termine, reintenta.")
+            time.sleep(2)
+    fd.seek(0); fd.truncate()
+    fd.write(f"{quien} (pid {os.getpid()}, desde {datetime.datetime.now():%Y-%m-%d %H:%M})"); fd.flush()
+    os.environ["FONOTECA_CERROJO"] = str(os.getpid())
+    _CERROJO_FD.append(fd)   # abierto hasta que el proceso termina: ahí el sistema lo suelta
+
 def guardar_json(ruta, datos, **kw):
     """Escribe un JSON entero o no lo escribe (archivo temporal + os.replace): un corte nunca deja un JSON truncado."""
     import json
@@ -198,7 +242,7 @@ def cambiar_rutas(mover, nombre, equivalencias=()):
     escuchas, estrellas, historial y playlists a la ruta nueva y purga las quitadas, sin que nadie tenga que pasárselo.
     Ruta nueva None = la canción se QUITÓ sin reemplazo: sale del state, de las playlists y de las listas, y Navidrome
     la purga (una canción BORRADA que se va a re-bajar no pasa por aquí: borrar_canciones.py la guarda «faltante»)."""
-    import json, shutil
+    import shutil
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     state = state_leer()
     if any(v in mover for v in state.values()):
@@ -243,11 +287,11 @@ def cambiar_rutas(mover, nombre, equivalencias=()):
     ac_p = decision("ids-mb-aceptados.json")
     if os.path.isfile(ac_p):
         rel = {os.path.relpath(o, ROOT): (os.path.relpath(n, ROOT) if n else None) for o, n in mover.items()}
-        ac = json.load(open(ac_p, encoding="utf-8"))
+        ac = leer_json(ac_p, {})
         nuevo = {rel.get(k, k): v for k, v in ac.items() if rel.get(k, k) is not None}
         if nuevo != ac:
             shutil.copy2(ac_p, os.path.join(RESPALDOS, f"ids-mb-aceptados.json.{stamp}"))
-            json.dump(nuevo, open(ac_p, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))   # como ids_mb.py
+            guardar_json(ac_p, nuevo, separators=(",", ":"))   # como ids_mb.py
     return log_pendiente(nombre or "cambios", mover)
 
 def esperando_rebajar():
@@ -260,7 +304,7 @@ def esperando_rebajar():
 def _embed(sid):
     """Lee la página embed pública de la canción (sin la Web API ni su cuota; la API por lotes da 403 desde sep 2026)
     y guarda en caché su duración (ms) y el enlace de su vista previa de 30 s. False si no se pudo (no se guarda nada)."""
-    import json, re
+    import re
     from red import pagina   # 1 cada 1,5 s
     h = pagina(f"https://open.spotify.com/embed/track/{sid}")
     m = re.search(r'"duration":(\d+)', h)
@@ -269,9 +313,9 @@ def _embed(sid):
     pv = re.search(r'"audioPreview":\{"url":"([^"]+)"', h)
     for nombre, valor in (("spotify-embed-duracion.json", int(m.group(1))), ("spotify-embed-preview.json", pv and pv.group(1))):
         c = cache_path(nombre)
-        cache = json.load(open(c)) if os.path.exists(c) else {}
+        cache = leer_json(c, {})
         cache[sid] = valor
-        json.dump(cache, open(c, "w"))
+        guardar_json(c, cache)
     return True
 
 def _pagina_publica(url):
@@ -280,16 +324,15 @@ def _pagina_publica(url):
     return pagina(url)
 
 def _cache_publico(clave, leer):
-    import json
     c = cache_path("spotify-publico.json")
-    cache = json.load(open(c, encoding="utf-8")) if os.path.exists(c) else {}
+    cache = leer_json(c, {})
     if clave not in cache:
         v = leer()
         if v is None:
             return None   # sin red o sin respuesta: no se guarda (se reintenta la próxima vez)
-        cache = json.load(open(c, encoding="utf-8")) if os.path.exists(c) else {}
+        cache = leer_json(c, {})
         cache[clave] = v
-        json.dump(cache, open(c, "w", encoding="utf-8"), ensure_ascii=False)
+        guardar_json(c, cache)
     return cache[clave]
 
 def _texto(s):
@@ -333,11 +376,10 @@ def spotify_disco(album_id):
 
 def duracion_spotify(sid):
     """Duración (s) de la canción EXACTA de Spotify (la que se bajó), del embed público. None si no se pudo."""
-    import json
     c = cache_path("spotify-embed-duracion.json")
-    cache = json.load(open(c)) if os.path.exists(c) else {}
+    cache = leer_json(c, {})
     if sid and sid not in cache and _embed(sid):
-        cache = json.load(open(c))
+        cache = leer_json(c, {})
     return cache[sid] / 1000 if sid in cache else None
 
 def parecido_spotify(sid, ruta):
@@ -355,14 +397,14 @@ def parecido_spotify(sid, ruta):
     if not sid:
         return None
     c = cache_path("spotify-preview-huella.json")
-    cache = json.load(open(c)) if os.path.exists(c) else {}
+    cache = leer_json(c, {})
     if sid not in cache:
         cu = cache_path("spotify-embed-preview.json")
-        urls = json.load(open(cu)) if os.path.exists(cu) else {}
+        urls = leer_json(cu, {})
         if sid not in urls:
             if not _embed(sid):
                 return None
-            urls = json.load(open(cu))
+            urls = leer_json(cu, {})
         hp = None
         if urls.get(sid):   # 2 oct: -f (un 403/404 ya no llega como «archivo») y una huella fallida NO se guarda
             with tempfile.NamedTemporaryFile(suffix=".mp3") as t:
@@ -371,9 +413,9 @@ def parecido_spotify(sid, ruta):
                 hp = huella(t.name)
             if not hp:
                 return None   # se reintenta la próxima vez; «sin vista previa» se guarda solo si Spotify no la tiene
-        cache = json.load(open(c)) if os.path.exists(c) else {}
+        cache = leer_json(c, {})
         cache[sid] = hp
-        json.dump(cache, open(c, "w"))
+        guardar_json(c, cache)
     corto, largo = cache[sid], huella(ruta)
     if not corto or not largo:
         return None

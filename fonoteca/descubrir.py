@@ -18,7 +18,7 @@ Timer: musica-descubrir (lunes 10:00).
 """
 import datetime, glob, hashlib, json, os, secrets, sqlite3, subprocess, sys, time, urllib.parse, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from comun import ROOT, HERE, LOGS, clave_artista, clave_titulo, CONF, NAVIDROME, NAVIDROME_DB
+from comun import ROOT, HERE, LOGS, clave_artista, clave_titulo, CONF, NAVIDROME, NAVIDROME_DB, leer_json, guardar_json, cerrojo
 from red import pedir_json
 
 # usuario de Navidrome → su cuenta de ListenBrainz, su carpeta de historial (usuarios/<…>), el archivo .m3u y el nombre
@@ -178,7 +178,7 @@ def main():
     args = sys.argv[1:]
     execute = "--execute" in args
     n = int(args[args.index("--n") + 1]) if "--n" in args else N_DEFECTO
-    hist = json.load(open(HISTORIAL, encoding="utf-8")) if os.path.exists(HISTORIAL) else {}
+    hist = leer_json(HISTORIAL, {})   # 2 oct: un JSON roto se aparta y se sigue
     pw = open(os.path.join(NAVIDROME, ".robot")).read().strip()
     log = {"fecha": datetime.date.today().isoformat(), "usuarios": {}}
     solo = args[args.index("--usuario") + 1] if "--usuario" in args else None   # uno solo (p. ej. alguien nuevo)
@@ -230,6 +230,7 @@ def main():
             print(f"  (no está en Deezer) {e['artista']} – {e['titulo']}")
         if not execute:
             continue
+        cerrojo("descubrir.py")   # 2 oct: escribe playlists y toca Navidrome: no a la vez que un procesado
         hoy = datetime.date.today().isoformat()
         bajadas = []
         for e in elegidas:
@@ -250,7 +251,7 @@ def main():
         for e in sin_deezer:   # tampoco se vuelven a intentar
             h[e["mbid"]] = {"fecha": hoy, "artista": e["artista"], "titulo": e["titulo"], "deezer": None,
                             "claves": [list(k) for k in claves(e["artista"], e["titulo"])], "ruta": None}
-        json.dump(hist, open(HISTORIAL, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        guardar_json(HISTORIAL, hist, indent=1)
         asignacion = "sin cambios (nada bajado)"
         if bajadas:
             m3u = os.path.join(ROOT, "_Playlists", f"{cfg['archivo']}.m3u")
@@ -268,7 +269,7 @@ def main():
                                     "sin_deezer": len(sin_deezer), "playlist": asignacion}
     if execute:
         lp = os.path.join(LOGS, f"descubrir-{datetime.datetime.now():%Y%m%d-%H%M%S}.json")
-        json.dump(log, open(lp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        guardar_json(lp, log, indent=1)
         print("HECHO. Log:", lp)
     else:
         print("SIMULACIÓN: no se bajó nada. Usa --execute.")

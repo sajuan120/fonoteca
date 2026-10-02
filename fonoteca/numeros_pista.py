@@ -30,7 +30,7 @@ Log para revertir y para que Navidrome pase las reproducciones al nombre nuevo (
 """
 import collections, datetime, json, os, re, sys, urllib.parse
 from audio import abrir, es_audio
-from comun import ROOT, SKIP, LOGS, cache_path, plan_path, log_path, antra_abierto, clave_titulo, cambiar_rutas, plano, guardar_json
+from comun import ROOT, SKIP, LOGS, plan_path, log_path, antra_abierto, clave_titulo, cambiar_rutas, plano, guardar_json, leer_json, cerrojo
 from red import Cache, pedir_json
 
 STATE = os.path.join(ROOT, ".antra_state.json")
@@ -38,12 +38,11 @@ TAGS = ("tracknumber", "discnumber", "totaltracks", "tracktotal", "totaldiscs", 
 NUM = re.compile(r"^(?:(\d+)-)?(\d+) - (.+)$")
 
 # ---------- MusicBrainz (respaldo cuando Deezer no tiene el disco) ----------
-CACHE = cache_path("mb-release-cache.json")
-cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {}
+mbr = Cache("mb-release-cache.json")   # 2 oct: red.Cache (antes caché propia sin archivo temporal: truncada = el paso 7a muerto)
 
 def release(rid):
     """{'discs': n, 'by_rt': {releasetrackid: (disc, pos, total)}, 'by_rec': {recording: (disc, pos, total)}}"""
-    if rid not in cache:
+    if rid not in mbr:
         d = pedir_json(f"https://musicbrainz.org/ws/2/release/{rid}?inc=recordings&fmt=json", intentos=3)   # red.py: 1/s
         if d is None:
             return None
@@ -55,9 +54,8 @@ def release(rid):
                 v = (m.get("position", 1), t.get("position"), tot)
                 by_rt[t["id"]] = v
                 by_rec.setdefault(t["recording"]["id"], v)
-        cache[rid] = {"discs": len(media), "by_rt": by_rt, "by_rec": by_rec}
-        if len(cache) % 50 == 0: json.dump(cache, open(CACHE, "w"))
-    return cache[rid]
+        mbr.poner(rid, {"discs": len(media), "by_rt": by_rt, "by_rec": by_rec})
+    return mbr[rid]
 
 # ---------- Deezer (la referencia) ----------
 dz = Cache("deezer-cache.json", solo_leer=True)                 # caché de enriquecer.py (solo se lee)
@@ -199,9 +197,10 @@ def recuperar():
     """Un renombrado cortado a mitad (Ctrl+C, DETENER, error) dejaba archivos .tn-tmp-N que nadie veía (2 oct). Si quedó
     tracknums-en-curso.json se termina tal cual; un .tn-tmp-N sin registro recibe el nombre que dicen sus etiquetas."""
     if os.path.exists(EN_CURSO):
-        ec = json.load(open(EN_CURSO, encoding="utf-8"))
+        ec = leer_json(EN_CURSO, {"cambios": []})
         print(f"⚠️ Quedó un renombrado a medias ({len(ec['cambios'])} canciones, {ec.get('fecha', '?')}): lo termino.")
         if antra_abierto(): sys.exit("Antra está abierto; ciérralo y reintenta.")
+        cerrojo("numeros_pista.py (recuperar)")
         out, n = terminar(ec["cambios"])
         print(f"   terminado: {n} renombradas. Log: {out}")
     sueltos = [os.path.join(d, f) for d, _, fs in os.walk(ROOT) for f in fs if re.match(r"^\.tn-tmp-\d+\.", f)]
@@ -330,7 +329,7 @@ for i, (d, fl) in enumerate(folders):
                              tot=por_disco.get(dn), discos=discos, old_tn=x["tn"], old_dn=x["dn"], src=f"{fuente}:{eid}"))
     if i % 50 == 0: print(f"  {i}/{len(folders)} carpetas", flush=True)
 
-json.dump(cache, open(CACHE, "w")); dzn.guardar()
+mbr.guardar(); dzn.guardar()
 # choques de nombre dentro de la carpeta tras renombrar
 byd = collections.defaultdict(list)
 for p in plan: byd[p["dir"]].append(p)
@@ -341,7 +340,7 @@ for dd, ps in byd.items():
         manual.append((os.path.join(ROOT, dd), "choque de nombres")); stats["carpetas a mano"] += 1
         plan = [p for p in plan if p["dir"] != dd]
 byd = {k: v for k, v in byd.items() if any(p["dir"] == k for p in plan)}
-json.dump(dict(plan=plan, manual=manual), open(plan_path("plan-tracknums.json"), "w"), ensure_ascii=False, indent=1)
+guardar_json(plan_path("plan-tracknums.json"), dict(plan=plan, manual=manual), indent=1)
 with open(plan_path("plan-tracknums.txt"), "w") as o:
     for p in plan: o.write(f"{p['dir']}\n   {p['old']}  →  {p['new']}   [{p['src']}]\n")
     o.write("\nA MANO (no se pudieron numerar solas y tienen números repetidos o nombres que no cuadran):\n" +
@@ -364,6 +363,7 @@ if problems:
 print(f"plan OK: {len(plan)} canciones")
 if "--execute" not in sys.argv or not plan: sys.exit(0)
 if antra_abierto(): sys.exit("Antra está abierto; ciérralo y reintenta.")
+cerrojo("numeros_pista.py")
 
 # 2 oct: el plan entero (etiquetas, nombre temporal y nombre final de cada una) se escribe ANTES de tocar nada; un corte
 # en medio se termina en la próxima corrida (recuperar()). Antes el log se escribía al final y un Ctrl+C dejaba archivos

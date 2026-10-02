@@ -46,7 +46,7 @@ AUDIO = (".mp3", ".flac", ".m4a", ".ogg", ".opus")
 GENERO = "Prueba"
 DB = NAVIDROME_DB
 # 2 oct: bajo DATOS (= HERE en uso normal): en modo prueba se pisaba el estado REAL del embudo
-from comun import DATOS, RESPALDOS, guardar_json
+from comun import DATOS, RESPALDOS, guardar_json, leer_json, cerrojo
 ESTADO = os.path.join(DATOS, "prueba-estado.json")
 GENEROS_CACHE = os.path.join(DATOS, "prueba-generos.json")   # carpeta del disco → [género real] ([] = no se supo)
 REVISAR_TODO = "--todo" in sys.argv   # marcar --todo: recalcula también las que ya tienen géneros (tras cambiar reglas)
@@ -115,7 +115,7 @@ def genero_deezer(dz, g2):
 
 def marcar():
     hechos, ahora = [], time.time()
-    cache = json.load(open(GENEROS_CACHE, encoding="utf-8")) if os.path.exists(GENEROS_CACHE) else {}
+    cache = leer_json(GENEROS_CACHE, {})   # 2 oct: un JSON roto se aparta y se sigue (antes el timer moría cada 5 min)
     cache = {k: (v if isinstance(v, list) else [v] if v else []) for k, v in cache.items()}   # antes: un solo género
     datos = None   # se cargan solo si hay algo que marcar
     mapeo = {}
@@ -133,9 +133,8 @@ def marcar():
             if datos is None:
                 g2, fijos = mapa_generos()
                 datos = (g2, fijos, generos_biblioteca())
-                if os.path.exists(MAPPINGS):
-                    mapeo = {(m.get("LocalPath") or "").replace("/app/downloads", PRUEBA, 1): m.get("ExternalId")
-                             for m in json.load(open(MAPPINGS, encoding="utf-8")).values() if m.get("ExternalProvider") == "deezer"}
+                mapeo = {(m.get("LocalPath") or "").replace("/app/downloads", PRUEBA, 1): m.get("ExternalId")
+                         for m in mappings().values() if m.get("ExternalProvider") == "deezer"}
             g2, fijos, bib = datos
             k = clave_artista((a.get("artist") or [""])[0])
             real = ([fijos[k]] if k in fijos else None) or bib.get(k) or cache.get(carpeta)
@@ -146,15 +145,24 @@ def marcar():
             nuevo = (real or [])[:2] + [GENERO]
             if actual == nuevo:
                 continue
+            cerrojo("prueba.py marcar", esperar=120)   # 2 oct: escribe en la biblioteca: no a la vez que un procesado
             a["genre"] = nuevo
             a.save()
             hechos.append((os.path.relpath(p, PRUEBA), " · ".join(nuevo)))
         except Exception as e:
             print(f"no pude marcar {os.path.relpath(p, PRUEBA)}: {e}", file=sys.stderr)
-    json.dump(cache, open(GENEROS_CACHE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    guardar_json(GENEROS_CACHE, cache, indent=1)
     for h, g in hechos:
         print(f"géneros {g}:", h)
     return hechos
+
+
+def mappings():
+    """El .mappings.json de Octo-Fiesta (lo escribe él: si está a medias, se sigue sin él esta vez)."""
+    try:
+        return json.load(open(MAPPINGS, encoding="utf-8")) if os.path.exists(MAPPINGS) else {}
+    except ValueError as e:
+        print(f"⚠️ {MAPPINGS} no se pudo leer ({e}): esta vez sin los IDs de Deezer", file=sys.stderr); return {}
 
 
 def fecha_utc(s):
@@ -232,10 +240,10 @@ def adoptar_mp3(adoptar, hoy, estado, log):
 
 def revisar(execute):
     ahora = time.time()
-    estado = json.load(open(ESTADO, encoding="utf-8")) if os.path.exists(ESTADO) else {}
+    estado = leer_json(ESTADO, {})   # 2 oct: un JSON roto se aparta y se sigue
     mapeo = {}   # ruta en el disco → (id de Deezer, fecha de descarga)
-    if os.path.exists(MAPPINGS):
-        for m in json.load(open(MAPPINGS, encoding="utf-8")).values():
+    if True:
+        for m in mappings().values():
             lp = (m.get("LocalPath") or "").replace("/app/downloads", PRUEBA, 1)
             mapeo[lp] = (m.get("ExternalId") if m.get("ExternalProvider") == "deezer" else None, fecha_utc(m.get("DownloadedAt")))
     con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
@@ -321,6 +329,7 @@ def revisar(execute):
         print("SIMULACIÓN: no se tocó nada. Usa --execute.")
         return
 
+    cerrojo("prueba.py revisar")   # 2 oct: mueve y borra en la biblioteca: no a la vez que un procesado o el panel
     hoy = iso(ahora)
     for c in promover: c["e"]["promovida"] = hoy
     for c in avisos: c["e"]["avisada"] = hoy; c["e"]["avisada_ts"] = ahora

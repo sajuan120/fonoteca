@@ -13,7 +13,7 @@ Uso: nd_escuchas_spotify.py <zip del historial> <usuario> [--execute]
 """
 import collections, datetime, glob, json, os, shutil, sqlite3, subprocess, sys
 
-from comun import DATOS, historial_en_biblioteca, indice_biblioteca, log_path, NAVIDROME
+from comun import DATOS, historial_en_biblioteca, indice_biblioteca, log_path, NAVIDROME, cerrojo
 
 zpath, user = sys.argv[1], sys.argv[2]
 EXECUTE = "--execute" in sys.argv
@@ -68,6 +68,7 @@ if not EXECUTE:
     print("\n(simulación: agrega --execute)"); sys.exit()
 if not delta:
     print("nada nuevo que cargar"); sys.exit()
+cerrojo("nd_escuchas_spotify.py")
 
 compose = ["docker", "compose", "-f", os.path.join(ND, "docker-compose.yml")]
 subprocess.run(compose + ["stop"], check=True)

@@ -22,7 +22,7 @@ Nunca usar "/" en un nombre de género: Navidrome lo parte en dos.
 import collections, json, os, re, subprocess, sys, time
 from audio import abrir, es_audio
 
-from comun import ROOT, HERE, log_path, RESPALDOS, SKIP
+from comun import ROOT, HERE, log_path, RESPALDOS, SKIP, cerrojo, guardar_json
 from generos_reglas import G2, fijos
 # la lista de 20, la traducción de los géneros de Deezer/Apple y los fijos por artista: generos_reglas.py (30 sep)
 FIJOS = fijos()   # decisiones/generos-fijos.tsv
@@ -124,7 +124,7 @@ for p, clave, gs, guardar_deezer in arch:
         plan.append({"path": p, "antes": gs, "despues": nuevo or gs, "deezer": guardar_deezer})
 if VOTOS_DE:
     plan = []
-json.dump(plan, open(__import__("comun").plan_path("plan-generos.json"), "w"), ensure_ascii=False, indent=0)
+guardar_json(__import__("comun").plan_path("plan-generos.json"), plan, indent=0)
 
 print(f"{len(arch)} audios | {len(plan)} cambiarían | con 2 géneros: {len(dos)} artistas/discos ({sum(dos.values())} canciones)")
 for g, n in total.most_common():
@@ -143,6 +143,7 @@ for a, c in sorted(dudosos, key=lambda x: -sum(x[1].values()))[:40]:
 # ---------- aplicar ----------
 if "--execute" not in sys.argv or not plan:
     sys.exit(0)
+cerrojo("generos.py")
 from audio import abrir as _abrir
 if "--sin-respaldo" not in sys.argv:
     subprocess.run(["python3", os.path.join(HERE, "tags_backup.py"), "dump",
@@ -161,7 +162,7 @@ for x in plan:
     except Exception as e:
         errores.append({**x, "error": str(e)})
 LOG = log_path("generos-log")
-json.dump({"hechos": hechos, "errores": errores}, open(LOG, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+guardar_json(LOG, {"hechos": hechos, "errores": errores}, indent=0)
 print(f"ESCRITAS {len(hechos)} | errores {len(errores)} | log {LOG}")
 for e in errores[:10]:
     print("  ", e["path"], e["error"])

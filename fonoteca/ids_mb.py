@@ -25,7 +25,7 @@ import base64, collections, json, os, re, subprocess, sys, urllib.error, urllib.
 import numpy as np
 from audio import abrir, es_audio
 from comun import (ACOUSTID_KEY, decision, ROOT, cache_path, plan_path, log_path, es_de_album, antra_abierto, grabacion_corresponde,
-                   base_disco, clave_titulo, clave_artista)
+                   base_disco, clave_titulo, clave_artista, leer_json, guardar_json, cerrojo)
 from red import pedir_json
 
 args = sys.argv[1:]
@@ -46,14 +46,15 @@ if "--revert" in args:
 EXECUTE, SIN_RED = "--execute" in args, "--sin-red" in args
 if EXECUTE and antra_abierto():
     sys.exit("Antra está abierto: ciérralo primero (puede estar escribiendo canciones sueltas en Artista/Álbum).")
+if EXECUTE: cerrojo("ids_mb.py")
 carpetas = [a for a in args if not a.startswith("--")] or ["."]
 def log(*a): print(*a, flush=True)
 
 # ---------------------------------------------------------------- consultas (con caché; una falla de red no se guarda)
 def cargar(nombre):
     p = cache_path(nombre)
-    return (json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}), p
-def guardar(d, p): json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    return leer_json(p, {}), p   # 2 oct: una caché truncada se aparta en vez de tumbar el script (y la auditoría)
+def guardar(d, p): guardar_json(p, d, separators=(",", ":"))   # archivo temporal + os.replace
 GRAB, GRAB_P = cargar("ids-mb-grabaciones.json")
 DISCOS, DISCOS_P = cargar("ids-mb-discos.json")
 ISRC, ISRC_P = cargar("ids-mb-isrc.json")
@@ -375,7 +376,7 @@ for rel in con_id:
 # Las que se dejan a propósito (el título no coincide pero el audio confirma el ID, o misma canción con otra duración):
 # auditoria.py las lee para no marcarlas en cada corrida (ella no consulta AcoustID).
 ACEPTADOS_P = decision("ids-mb-aceptados.json")      # decisión (no caché): con los datos, como revisar_fallidas.tsv
-ACEPTADOS = json.load(open(ACEPTADOS_P, encoding="utf-8")) if os.path.exists(ACEPTADOS_P) else {}
+ACEPTADOS = leer_json(ACEPTADOS_P, {})
 if EXECUTE:
     for rel in X:
         ACEPTADOS.pop(rel, None)
@@ -396,7 +397,7 @@ for rel, (acc, new, *_ ) in sorted(acciones.items()):
             if v is None: t.pop(k, None)
             else: t[k] = v
         t.save()
-json.dump(detalle, open(plan_path("ids-mb-etiquetas.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)   # antes → después
+guardar_json(plan_path("ids-mb-etiquetas.json"), detalle, indent=1)   # antes → después
 with open(plan_path("ids-mb.tsv"), "w", encoding="utf-8") as o:
     o.write("acción\tarchivo\ttenía (título de su ID)\tqueda\tfuentes\tmotivo\n")
     for rel, (acc, new, tenia, queda, fuentes, mot) in sorted(acciones.items(), key=lambda kv: (kv[1][0], kv[0])):
@@ -409,7 +410,7 @@ if sin_red: log(f"⚠️ {len(sin_red)} sin cambiar por falta de red (volver a c
 log(f"plan: {plan_path('ids-mb.tsv')}")
 if EXECUTE:
     out = log_path("ids-mb")
-    json.dump({"cambios": cambios}, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+    guardar_json(out, {"cambios": cambios}, indent=0)
     log(f"ESCRITO: {len(cambios)} canciones. Log (para --revert): {out}")
 else:
     log(f"SIMULACIÓN: cambiaría {len(cambios)} canciones. Nada escrito (usa --execute).")

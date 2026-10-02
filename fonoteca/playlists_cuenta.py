@@ -14,7 +14,7 @@ Uso: playlists_cuenta.py <zip de datos de la cuenta o PlaylistN.json> <usuario> 
 """
 import datetime, glob, json, os, re, shutil, sqlite3, subprocess, sys, zipfile
 
-from comun import ROOT, DATOS, indice_biblioteca, buscar, log_path, NAVIDROME
+from comun import ROOT, DATOS, indice_biblioteca, buscar, log_path, NAVIDROME, cerrojo
 
 src, user = sys.argv[1], sys.argv[2]
 SOLO = [x.strip() for x in sys.argv[sys.argv.index("--solo") + 1].split(",")] if "--solo" in sys.argv else None
@@ -77,6 +77,7 @@ ajenas = [f for f in glob.glob(os.path.join(PL, f"{user} - *.m3u"))       # suya
           if duenos.get("/music/_Playlists/" + os.path.basename(f)) != uid]
 if not cambios and not ajenas:
     print("nada que cambiar"); sys.exit()
+cerrojo("playlists_cuenta.py")
 
 ts = f"{datetime.datetime.now():%Y%m%d-%H%M%S}"
 rdir = os.path.join(DATOS, "respaldos", f"playlists-cuenta-{ts}")

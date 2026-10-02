@@ -26,7 +26,7 @@ playlist → purgar lo explicado → arrancar → escaneo → mover los logs a a
 """
 import datetime, glob, json, os, shutil, sqlite3, subprocess, sys
 from comun import (HERE, LOGS, PRUEBA, ROOT, RESPALDOS, SKIP, NAVIDROME_DB, NAVIDROME, ND_PENDIENTES, ND_APLICADOS,
-                   borradas, rutas_por_sid, guardar_json)
+                   borradas, rutas_por_sid, guardar_json, cerrojo)
 from audio import es_audio
 
 ND = NAVIDROME   # config.toml: rutas.navidrome
@@ -37,6 +37,7 @@ if PRUEBA:   # banco de pruebas o una prueba aislada (MUSIC_ROOT): el Navidrome 
     print("(modo prueba: Navidrome no se toca; los logs quedan en nd-pendientes)")
     sys.exit(0)
 user = args[args.index("--usuario") + 1] if "--usuario" in args else None
+cerrojo("nd_actualizar.py")   # 2 oct: dos a la vez cruzaban stop/up de Navidrome y escrituras en la base
 PURGAR_HUERFANAS = "--purgar-huerfanas" in args
 STAMP = f"{datetime.datetime.now():%Y%m%d-%H%M%S}"
 RAIZ = ROOT + "/"

@@ -14,7 +14,7 @@ Log: logs/borradas-<fecha>/log.json
 """
 import os, shutil, sys, time
 from audio import abrir
-from comun import ROOT, LOGS, antra_abierto, anotar_fallida, state_leer, state_guardar, guardar_json
+from comun import ROOT, LOGS, antra_abierto, anotar_fallida, state_leer, state_guardar, guardar_json, cerrojo
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -47,6 +47,7 @@ for ps in by_ino.values():
 if not EXECUTE:
     sys.exit("Simulación: no se tocó nada. Usa --execute.")
 
+cerrojo("borrar_canciones.py")
 stamp = time.strftime("%Y%m%d-%H%M%S")
 ldir = os.path.join(LOGS, f"borradas-{stamp}")
 os.makedirs(ldir)

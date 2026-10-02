@@ -28,7 +28,7 @@ Con --execute, en orden (se detiene si algo sale mal):
   9. Documento de pendientes (revisar.py), chequeo de salud (musica-salud.py) y kit de recuperación (kit_recuperacion.py).
 """
 import datetime, glob, json, os, subprocess, sys, time
-from comun import ROOT, HERE, LOGS, RESPALDOS, PRUEBA, ANTRA_HISTORY, LISTAS, KIT, SCRIPTS, antra_abierto, anotar_fallida, anotar_dudosa
+from comun import ROOT, HERE, LOGS, RESPALDOS, PRUEBA, ANTRA_HISTORY, LISTAS, KIT, SCRIPTS, antra_abierto, anotar_fallida, anotar_dudosa, cerrojo
 from comun import duracion_spotify, dura_distinto, parecido_spotify
 from audio import audios, es_audio, verificar
 
@@ -71,6 +71,8 @@ def tags(p):
 
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo primero.")
+if EXECUTE:
+    cerrojo(f"procesar_descarga.py {folder}")   # 2 oct: sus pasos lo heredan; el embudo, el panel y las herramientas esperan
 assert os.path.isdir(os.path.join(ROOT, folder)), f"No existe {ROOT}/{folder}"
 if any(os.path.isdir(os.path.join(ROOT, folder, x)) for x in os.listdir(os.path.join(ROOT, folder)) if not x.startswith(".")):
     sys.exit(f"«{folder}» tiene subcarpetas: parece un artista, no una descarga. Mueve las canciones nuevas a otra carpeta.")

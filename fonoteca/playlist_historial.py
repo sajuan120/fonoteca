@@ -12,7 +12,7 @@ Uso: playlist_historial.py <zip del historial> <nombre> [--min-plays N] [--sin-e
 """
 import collections, datetime, os, sys
 
-from comun import ROOT, historial_en_biblioteca   # regla única de "misma canción"
+from comun import ROOT, historial_en_biblioteca, cerrojo   # regla única de "misma canción"
 zpath, name = sys.argv[1], sys.argv[2]
 MIN = int(sys.argv[sys.argv.index("--min-plays") + 1]) if "--min-plays" in sys.argv else 0
 DIAS = int(sys.argv[sys.argv.index("--sin-escuchar") + 1]) if "--sin-escuchar" in sys.argv else None
@@ -31,6 +31,7 @@ if DIAS is not None:
 sel.sort(key=lambda x: (-x[0], x[1]))
 print(f"con >= {MIN} escuchas: {len(sel)}")
 if EXECUTE:
+    cerrojo("playlist_historial.py")
     out = os.path.join(ROOT, "_Playlists", f"{name}.m3u")
     with open(out, "w", encoding="utf-8") as o:
         o.write("#EXTM3U\n" + (f"#PLAYLIST:{TITULO}\n" if TITULO else "") + "".join(f"../{r}\n" for _, _, r in sel))

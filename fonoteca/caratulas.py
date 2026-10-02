@@ -25,7 +25,7 @@ from mutagen.flac import Picture
 from PIL import Image, ImageDraw, ImageFont
 from audio import abrir, audios, es_audio
 from comun import (ROOT, RESPALDOS, PORTADAS_IA, antra_abierto, cache_path, decision, es_de_album, log_path, plan_path,
-                   plano, sin_parentesis)
+                   plano, sin_parentesis, leer_json, guardar_json, cerrojo)
 from red import Cache, pedir_bytes, pedir_json
 
 dz = Cache("deezer-cache.json")   # red.py: la caché de Deezer que comparten varios scripts
@@ -175,7 +175,7 @@ def mezcladas_revert(lg):
 # ---------------------------------------------------------------- mejorar (chicas o raras → la misma en grande)
 def mejorar(execute, umbral):
     hcp = cache_path("caratulas-huellas.json")
-    huellas = json.load(open(hcp)) if os.path.exists(hcp) else {}
+    huellas = leer_json(hcp, {})
 
     def candidatos(fs):
         t = abrir(fs[0]); g = lambda k: (t.get(k) or [""])[0]
@@ -263,8 +263,8 @@ def mejorar(execute, umbral):
             print(f"  ~  otra imagen (mín. dist {min(c['dist'] for c in alternativas)})  {d}", flush=True)
         else:
             nada.append({"disco": d, "motivo": "ninguna fuente la tiene"}); print(f"  ✗  sin fuente  {d}", flush=True)
-        if i % 25 == 0: dz.guardar(); json.dump(huellas, open(hcp, "w"))
-    dz.guardar(); json.dump(huellas, open(hcp, "w"))
+        if i % 25 == 0: dz.guardar(); guardar_json(hcp, huellas)
+    dz.guardar(); guardar_json(hcp, huellas)
     out = log_path(f"caratulas-mejorar-{'log' if execute else 'simulacion'}")
     json.dump(dict(cambiadas=cambiadas, otra_imagen=otra, sin_fuente=nada), open(out, "w"), ensure_ascii=False, indent=1)
     print(f"\ndiscos {len(discos)} | misma imagen en grande: {len(cambiadas)} ({sum(x['canciones'] for x in cambiadas)} canciones)"
@@ -396,6 +396,7 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     modo = a[0] if a and not a[0].startswith("-") else "faltantes"
     execute = "--execute" in a
+    if execute: cerrojo("caratulas.py " + modo)
     revert = a[a.index("--revert") + 1] if "--revert" in a else None
     if modo == "faltantes":
         faltantes_revert(revert) if revert else faltantes(execute)
