@@ -59,7 +59,7 @@ Es el único comando después de cada descarga. Sin `--execute` simula hasta el 
 | 5c | Duplicados: una sola copia por grabación. | `duplicados.py` |
 | 6 | Una fecha por disco; géneros (lista de 20, hasta 2 por artista). | `fechas.py`, `generos.py` |
 | 7 | Números de pista, carátulas faltantes, letras, ReplayGain; las que se borraron y volvieron, a sus playlists. | `numeros_pista.py`, `caratulas.py`, `letras.py`, `replaygain.py`, `devolver_playlists.py` |
-| 8 | Navidrome: escaneo; escuchas, estrellas, historial y playlists a la ruta nueva. | `nd_actualizar.py` |
+| 8 | Navidrome: escaneo; escuchas, estrellas, historial y playlists a la ruta nueva (aplica todos los logs de `logs/nd-pendientes/`); purga solo lo que un log explica. | `nd_actualizar.py` |
 | 9 | Documento de pendientes y «conseguir en FLAC», chequeo de salud, kit de recuperación. | `revisar.py`, `musica-salud.py`, `kit_recuperacion.py` |
 
 ### 1.4 Mantener
@@ -128,6 +128,11 @@ Es el único comando después de cada descarga. Sin `--execute` simula hasta el 
   con el ID de otra. La auditoría por choques veía un tercio del problema; hubo que revisar cada ID contra su grabación.
 - **Navidrome:** los registros de cambios se aplican EN ORDEN (A→B y luego B→C = A→C) o se pierden escuchas, y una
   canción borrada que espera re-descarga no se borra de su base (guarda escuchas y estrellas).
+- **Un log que no llega a Navidrome es una escucha perdida.** Cuando cada script le pasaba «sus» logs a
+  `nd_actualizar.py`, un paso 8 fallido, un corte o una herramienta corrida desde la terminal dejaban rutas viejas sin
+  migrar, y la siguiente corrida las purgaba. Hoy `comun.cambiar_rutas` deja cada cambio en `logs/nd-pendientes/`,
+  `nd_actualizar.py` los aplica todos en orden (y los pasa a `nd-aplicados/` solo si terminó bien), purga solo lo que un
+  log explica, y si queda algo faltante sin explicar, o la biblioteca parece desmontada, no purga nada y avisa.
 - **Navidrome rellena el Instant Mix con canciones al azar del mismo género** cuando los servicios externos no dan
   parecidas. Un género artificial para todo un grupo de canciones las encierra en su propio mix.
 - **Antra deja sin fecha** algunas canciones bajadas sueltas, y Navidrome parte un disco sin YEAR o con distinto artista

@@ -80,7 +80,7 @@ try:
             raise RuntimeError(f"ya existe {dst}")
         os.rename(src, dst)
         log["movidos"].append([src, dst])
-    cambiar_rutas(dict(log["movidos"]), None)   # state de Antra (con respaldo) y demás listas → la ruta nueva
+    cambiar_rutas(dict(log["movidos"]), "juntar")   # state de Antra (con respaldo), listas y log pendiente para Navidrome
     for src, _ in plan:   # carpetas que Antra creó solo para estas canciones
         d = os.path.dirname(src)
         while d != ROOT and os.path.isdir(d) and not os.listdir(d):

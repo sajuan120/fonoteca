@@ -144,7 +144,7 @@ for p in plan:
 
 # state de Antra, playlists (sin repetir la que queda), equivalencias.tsv e ids-mb-aceptados.json → la ruta nueva
 # (30 sep: comun.cambiar_rutas; antes este script tenía su propia copia sin equivalencias ni aceptados)
-cambiar_rutas(mover, None)
+cambiar_rutas(mover, "duplicados")   # 2 oct: deja el log pendiente para nd_actualizar.py
 log = os.path.join(LOGS, f"duplicados-{stamp}.json")
 json.dump({"cambios": [{"old_path": a, "new_path": b} for a, b in mover.items()], "respaldo": dest},
           open(log, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

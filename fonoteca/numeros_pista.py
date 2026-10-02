@@ -173,7 +173,7 @@ def problema_visible(info):
 def rewrite_paths(pmap):
     """pmap: ruta absoluta vieja -> nueva. State de Antra, playlists, equivalencias.tsv e ids-mb-aceptados.json, con
     respaldo (comun.cambiar_rutas; 30 sep: antes solo state y playlists → equivalencias.tsv quedaba con rutas rotas)."""
-    cambiar_rutas(pmap, None)
+    cambiar_rutas(pmap, "tracknums")   # 2 oct: deja el log pendiente para nd_actualizar.py
     return len(pmap)
 
 if "--revert" in sys.argv:

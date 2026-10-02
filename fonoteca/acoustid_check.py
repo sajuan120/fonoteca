@@ -9,7 +9,7 @@ Resultado por canción:
 Salida: acoustid-resultado-<fecha>.json. Clave en .acoustid_key junto a los scripts (opcional: sin ella, todas salen
 «DESCONOCIDA» y el procesado las compara solo con la canción de Spotify).
 """
-import json, os, re, subprocess, sys, unicodedata, urllib.parse, urllib.request
+import json, os, subprocess, sys, urllib.parse, urllib.request
 from audio import abrir
 
 from comun import ROOT, ACOUSTID_KEY as KEY, LOGS, log_path, titulo_base, primer_artista, _calif, _VERSION

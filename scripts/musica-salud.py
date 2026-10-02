@@ -16,7 +16,7 @@ Si algo falla: aviso persistente + detalle en logs/salud-ultimo.txt.
 import collections, datetime, os, shutil, sqlite3, subprocess, sys
 _repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonoteca")   # en el repositorio: scripts/../fonoteca
 sys.path.insert(0, os.environ.get("MUSIC_TOOLS") or (_repo if os.path.isdir(_repo) else os.path.expanduser("~/music-tools")))
-from comun import HERE, ROOT, LOGS, antra_abierto, sin_procesar, esperando_rebajar, NAVIDROME_DB
+from comun import HERE, ROOT, LOGS, antra_abierto, sin_procesar, esperando_rebajar, NAVIDROME_DB, ND_PENDIENTES
 from audio import EXT_AUDIO as AUDIO
 
 DB = NAVIDROME_DB
@@ -86,6 +86,12 @@ for m in sorted(os.listdir(pl_dir)) if os.path.isdir(pl_dir) else []:
                 rotas.append(f"  {m}: {l}")
 if rotas:
     problemas.append(f"{len(rotas)} rutas rotas en playlists:\n" + "\n".join(rotas))
+
+# 3b. logs de cambios de ruta que Navidrome todavía no aplicó (2 oct)
+import glob
+pend = sorted(glob.glob(os.path.join(ND_PENDIENTES, "*.json")))
+if pend:
+    problemas.append(f"{len(pend)} log(s) de cambios de ruta sin pasar a Navidrome (logs/nd-pendientes/) → python3 {HERE}/nd_actualizar.py")
 
 # 4. espacio
 libre = shutil.disk_usage(ROOT).free / 1e9

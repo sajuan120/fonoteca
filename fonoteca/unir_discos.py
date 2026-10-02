@@ -19,11 +19,11 @@ Regla (la de las ediciones del 27-28 sep):
   · State de Antra, playlists .m3u y listas de decisiones al día (comun.cambiar_rutas); respaldo de las etiquetas en
     respaldos/tags-antes-unir-<hora>.json.
 Después (con --seguir se hace solo, en este orden): numeros_pista.py --execute, mb_disco.py <carpetas> --execute,
-replaygain.py <carpetas> --forzar --execute y nd_actualizar.py <logs> (escuchas a la ruta nueva).
+replaygain.py <carpetas> --forzar --execute y nd_actualizar.py (aplica los logs pendientes: escuchas a la ruta nueva).
 """
-import datetime, glob, json, os, re, shutil, subprocess, sys
+import datetime, json, os, re, shutil, subprocess, sys
 from audio import abrir, es_audio
-from comun import HERE, LOGS, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, clave_titulo, dura_distinto
+from comun import HERE, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, clave_titulo, dura_distinto
 
 args = sys.argv[1:]
 EXECUTE, SEGUIR = "--execute" in args, "--seguir" in args
@@ -154,13 +154,12 @@ log = cambiar_rutas(mover, "unir-discos", equivalencias=equiv)
 print(f"HECHO: {len(mover)} canciones movidas o unidas en {len(finales)} disco(s). Log: {log}")
 if not SEGUIR:
     print("Siguiente: numeros_pista.py --execute · mb_disco.py <carpetas> --execute · replaygain.py <carpetas> --forzar --execute"
-          f" · nd_actualizar.py {log}   (o repetir con --seguir)")
+          " · nd_actualizar.py   (o repetir con --seguir)")
     sys.exit()
 rels = [os.path.relpath(f, ROOT) for f in finales]
 t0 = datetime.datetime.now().timestamp()
 for cmd in (["numeros_pista.py", "--execute"], ["mb_disco.py", *rels, "--execute"], ["replaygain.py", *finales, "--forzar", "--execute"]):
     print(f"\n=== {' '.join(cmd[:1])}", flush=True)
     if subprocess.run([sys.executable, os.path.join(HERE, cmd[0]), *cmd[1:]]).returncode != 0:
-        sys.exit(f"Falló {cmd[0]}: sigue a mano desde ahí (nd_actualizar.py {log} al final).")
-tn = [f for f in glob.glob(os.path.join(LOGS, "tracknums-log-*.json")) if os.path.getmtime(f) >= t0]
-subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py"), log, *sorted(tn)])
+        sys.exit(f"Falló {cmd[0]}: sigue a mano desde ahí (nd_actualizar.py al final: los logs quedaron pendientes).")
+subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py")])   # 2 oct: aplica todos los logs pendientes

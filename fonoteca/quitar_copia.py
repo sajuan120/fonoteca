@@ -12,7 +12,7 @@ Dos usos:
   · COPIA (sobra → queda): el mismo audio en dos archivos (la auditoría lo marca como audio_igual / copias; duplicados.py
     resuelve solo los que tienen el mismo título). Este comando no decide cuál se queda: la regla de siempre es la del
     disco con más canciones, y si empatan la más escuchada. La que queda recibe:
-      - las escuchas, estrellas, historial y entradas de playlist de Navidrome (con nd_actualizar.py <log>);
+      - las escuchas, estrellas, historial y entradas de playlist de Navidrome (log pendiente → nd_actualizar.py);
       - el state de Antra, las playlists .m3u (sin repetirla si ya estaba) y las listas de decisiones (comun.cambiar_rutas);
       - el ISRC de la otra si no tenía (así la auditoría las reconoce) y una fila en decisiones/equivalencias.tsv con el
         spotify_id de la que sobra (Antra no la vuelve a bajar y sus playlists de Spotify la encuentran).
@@ -79,4 +79,4 @@ for s, q in pares:
     while d != ROOT and os.path.isdir(d) and not os.listdir(d):   # carpetas que quedaron vacías
         os.rmdir(d); d = os.path.dirname(d)
 log = cambiar_rutas(mover, "quitadas", equivalencias=equiv)
-print(f"HECHO: {len(pares)} canción(es) a {resp}.\nSiguiente (pasa sus escuchas a la que queda): python3 nd_actualizar.py {log}")
+print(f"HECHO: {len(pares)} canción(es) a {resp}. Log pendiente para Navidrome: {log}\nSiguiente (pasa sus escuchas a la que queda): python3 nd_actualizar.py")

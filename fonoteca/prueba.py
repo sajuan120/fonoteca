@@ -21,7 +21,7 @@
         disco de Hades II y Coral Crown ya estaba en «Soundtrack Hades» → nunca dos copias), no solo para las promovidas
         cuando llega su FLAC. ISRC: el del MP3 o, si no trae, el de Deezer (se guarda en el estado: 1 consulta por canción).
       · BORRAR: sin escuchas en 6 semanas (desde la última escucha, o desde que se bajó) → AVISO a las 5 semanas y se
-        borra si sigue igual al menos 7 días después del aviso. Las que tienen ESTRELLA no se borran nunca. Si se vuelve
+        borra si sigue igual al menos 7 días después del aviso (2 oct: el MP3 va a respaldos/prueba-<fecha>/, no se borra). Las que tienen ESTRELLA no se borran nunca. Si se vuelve
         a escuchar después del aviso, el aviso se anula.
       · ADOPTAR (30 sep):
         promovida hace 14+ días y su FLAC no llegó → entra a la biblioteca EN MP3: se le escriben su ISRC y DEEZER_ID
@@ -46,7 +46,7 @@ AUDIO = (".mp3", ".flac", ".m4a", ".ogg", ".opus")
 GENERO = "Prueba"
 DB = NAVIDROME_DB
 # 2 oct: bajo DATOS (= HERE en uso normal): en modo prueba se pisaba el estado REAL del embudo
-from comun import DATOS, RESPALDOS
+from comun import DATOS, RESPALDOS, guardar_json
 ESTADO = os.path.join(DATOS, "prueba-estado.json")
 GENEROS_CACHE = os.path.join(DATOS, "prueba-generos.json")   # carpeta del disco → [género real] ([] = no se supo)
 REVISAR_TODO = "--todo" in sys.argv   # marcar --todo: recalcula también las que ya tienen géneros (tras cambiar reglas)
@@ -340,47 +340,50 @@ def revisar(execute):
         for ext in (".txt", " (con nombres).tsv"):
             if os.path.exists(SALIDA + ext): os.remove(SALIDA + ext)
     log = {"fecha": hoy, "promovidas": [c["rel"] for c in promover], "avisos": [c["rel"] for c in avisos],
-           "borradas": [c["rel"] for c in borrar], "reemplazos": [], "anulados": [c["rel"] for c in anular], "adoptadas": []}
-    for c in borrar:
-        os.remove(c["p"]); estado.pop(c["rel"], None)
-    cambios = []
+           "borradas": [c["rel"] for c in borrar], "reemplazos": [], "anulados": [c["rel"] for c in anular], "adoptadas": [],
+           "respaldo": None, "estado": "en curso"}
     if (reemplazar or adoptar) and antra_abierto():
         print("Antra está abierto: los reemplazos y adopciones quedan para la próxima revisión.")
         reemplazar, adoptar = [], []
+    # 2 oct: el log ANTES de tocar nada (un corte en medio dejaba MP3 borrados sin rastro); los MP3 no se borran: van a
+    # respaldos/prueba-<fecha>/; y los cambios de ruta los anota comun.cambiar_rutas (state, playlists, listas y el log
+    # pendiente para Navidrome), que antes este script repetía a medias
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    lp = os.path.join(LOGS, f"prueba-{stamp}.json")
+    resp = os.path.join(RESPALDOS, f"prueba-{stamp}")
+    log["respaldo"] = resp if borrar or reemplazar else None
     for c, flac in reemplazar:
-        os.remove(c["p"]); estado.pop(c["rel"], None)
-        cambios.append({"old_path": c["p"], "new_path": flac})
         log["reemplazos"].append({"mp3": c["rel"], "flac": os.path.relpath(flac, ROOT)})
-    # playlists .m3u (p. ej. Descubrir.m3u): el MP3 reemplazado apunta a su FLAC; el borrado sale de la lista
-    cambio = {c["p"]: flac for c, flac in reemplazar}
-    fuera = {c["p"] for c in borrar}
-    if cambio or fuera:
-        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        pl_dir = os.path.join(ROOT, "_Playlists")
-        for m in sorted(os.listdir(pl_dir)):
-            if not m.endswith(".m3u"): continue
-            mp = os.path.join(pl_dir, m)
-            lineas = open(mp, encoding="utf-8").read().split("\n"); out = []
-            for l in lineas:
-                ab = os.path.normpath(os.path.join(pl_dir, l)) if l and not l.startswith("#") else None
-                if ab in fuera: continue
-                if ab in cambio: l = os.path.relpath(cambio[ab], pl_dir)
-                out.append(l)
-            if out != lineas:
-                shutil.copy2(mp, os.path.join(RESPALDOS, f"{m}.{stamp}"))
-                open(mp, "w", encoding="utf-8").write("\n".join(out))
-    log_adopcion, carpeta_adopcion = adoptar_mp3(adoptar, hoy, estado, log) if adoptar else (None, None)
-    for d, dirs, fs in os.walk(PRUEBA, topdown=False):   # carpetas que quedaron vacías
-        if d != PRUEBA and os.path.basename(d) != "playlists" and not os.listdir(d):
-            os.rmdir(d)
-    json.dump(estado, open(ESTADO, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    lp = os.path.join(LOGS, f"prueba-{datetime.datetime.now():%Y%m%d-%H%M%S}.json")
-    json.dump(dict(log, cambios=cambios), open(lp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    if cambios or log_adopcion:   # escuchas, estrellas, historial y playlists → su ruta nueva; limpia los «faltantes»
-        subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py"), *[l for l in (lp if cambios else None,
-                                                                                        log_adopcion) if l]], check=False)
-    elif borrar:  # solo borradas: que Navidrome limpie sus «faltantes»
-        subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py")], check=False)
+    guardar_json(lp, log, indent=1)
+    mover = {}   # MP3 de prueba → su copia de la biblioteca (reemplazo) o None (borrada a propósito)
+    try:
+        for c in borrar + [c for c, _ in reemplazar]:
+            dst = os.path.join(resp, c["rel"]); os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.move(c["p"], dst); estado.pop(c["rel"], None)
+        for c in borrar: mover[c["p"]] = None
+        for c, flac in reemplazar: mover[c["p"]] = flac
+        log["cambios"] = [{"old_path": o, "new_path": n} for o, n in mover.items() if n]
+        if mover:
+            log["log_nd"] = cambiar_rutas(mover, "prueba")   # playlists (p. ej. Descubrir.m3u) y log pendiente para Navidrome
+        log_adopcion, carpeta_adopcion = adoptar_mp3(adoptar, hoy, estado, log) if adoptar else (None, None)
+        for d, dirs, fs in os.walk(PRUEBA, topdown=False):   # carpetas que quedaron vacías
+            if d != PRUEBA and os.path.basename(d) != "playlists" and not os.listdir(d):
+                os.rmdir(d)
+        log["estado"] = "hecho"
+    finally:
+        guardar_json(ESTADO, estado, indent=1)
+        guardar_json(lp, log, indent=1)
+    cambios = log["cambios"]
+    if cambios or log_adopcion:   # escuchas, estrellas, historial y playlists → su ruta nueva (los logs quedaron pendientes)
+        # 2 oct: antes se ignoraba el resultado (y un Navidrome caído a las 12:30 perdía las escuchas en silencio); para
+        # las solo borradas no se corre nada: su log pendiente las purga en la próxima corrida de nd_actualizar.py
+        r = subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py")], check=False)
+        if r.returncode != 0:
+            avisar("Música de prueba: Navidrome NO quedó al día",
+                   f"nd_actualizar.py terminó con error {r.returncode}. Los MP3 están en {resp} y los logs quedaron en "
+                   f"logs/nd-pendientes/: se aplican en la próxima corrida (o con NAVIDROME AL DÍA en el panel).")
+            print(f"HECHO con error en Navidrome (código {r.returncode}). Log: {lp}")
+            sys.exit(1)
     if carpeta_adopcion:   # aviso con botón: Konsole que simula el procesado y pregunta (lo mismo que tras Antra)
         lista = "\n".join(nombre(c) for c in adoptar[:8])
         subprocess.Popen(["systemd-run", "--user", "--collect", "--quiet", "bash", "-c",
@@ -398,7 +401,8 @@ def revisar(execute):
                "\n\nEscúchalas o dales estrella para quedártelas.")
     if borrar or cambios:
         avisar("Música de prueba: limpieza hecha",
-               f"{len(cambios)} reemplazada(s) por la copia de la biblioteca · {len(borrar)} borrada(s) por no escucharse")
+               f"{len(cambios)} reemplazada(s) por la copia de la biblioteca · {len(borrar)} borrada(s) por no escucharse "
+               f"(los MP3 quedaron en {resp})")
     print(f"HECHO. Log: {lp}")
 
 
@@ -407,7 +411,13 @@ if __name__ == "__main__":
     if a[:1] == ["marcar"]:
         marcar()
     elif a[:1] == ["revisar"]:
-        marcar()
-        revisar("--execute" in a)
+        try:
+            marcar()
+            revisar("--execute" in a)
+        except SystemExit:
+            raise
+        except BaseException as e:   # 2 oct: corre por timer: un error solo se veía en journalctl
+            avisar("Música de prueba: el embudo falló", f"{e!r}\nMira: journalctl --user -u musica-prueba-embudo")
+            raise
     else:
         sys.exit(__doc__)

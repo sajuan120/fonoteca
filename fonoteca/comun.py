@@ -23,6 +23,11 @@ LOGS = os.path.join(DATOS, "logs")            # logs de cada paso (para revisar 
 CACHE = os.path.join(HERE, "cache")           # respuestas de Deezer / MusicBrainz / LRCLIB guardadas (se comparte)
 RESPALDOS = os.path.join(DATOS, "respaldos")  # respaldos de tags y del state de Antra
 PLANES = os.path.join(DATOS, "planes")        # último plan de cada paso (para mirar qué haría o qué hizo)
+# 2 oct: cada cambio de ruta deja un log en nd-pendientes/; nd_actualizar.py los aplica TODOS, en orden, y los pasa a
+# nd-aplicados/ solo si terminó bien. Así un paso 8 fallido, un corte o una herramienta corrida desde la terminal no
+# pierden las escuchas de Navidrome (antes cada script le pasaba «sus» logs y lo que no se pasaba se purgaba).
+ND_PENDIENTES = os.path.join(LOGS, "nd-pendientes")
+ND_APLICADOS = os.path.join(LOGS, "nd-aplicados")
 SKIP = {"_Playlists", "_Prueba"}              # carpetas de la raíz que NO son Artista/Álbum (_Prueba: MP3 de Octo-Fiesta, 28 sep)
 FALLIDAS = os.path.join(DATOS, "revisar_fallidas.tsv")  # ÚNICA lista de canciones a conseguir a mano
 NOTAS = os.path.join(HERE, "revisar_notas.md")          # notas a mano (solo se leen)
@@ -54,7 +59,7 @@ if PRUEBA:   # 2 oct: en modo prueba lo que se ESCRIBE va a la carpeta de prueba
     KIT, PORTADAS_IA = os.path.join(DATOS, "kit"), os.path.join(DATOS, "portadas-IA")
     if "MUSIC_LISTAS" not in os.environ:
         LISTAS = os.path.join(DATOS, "listas")
-for _d in (LOGS, CACHE, RESPALDOS, PLANES, DECISIONES, *([DOCUMENTOS] if PRUEBA else [])):   # (sin archivos de decisiones todo funciona igual)
+for _d in (LOGS, ND_PENDIENTES, ND_APLICADOS, CACHE, RESPALDOS, PLANES, DECISIONES, *([DOCUMENTOS] if PRUEBA else [])):   # (sin archivos de decisiones todo funciona igual)
     os.makedirs(_d, exist_ok=True)
 
 def log_path(nombre, ext="json"):
@@ -64,6 +69,31 @@ def log_path(nombre, ext="json"):
     while os.path.exists(p):
         p, n = f"{base}-{n}.{ext}", n + 1
     return p
+
+def log_pendiente(nombre, mover, extra=None):
+    """Deja en logs/nd-pendientes/ un log para nd_actualizar.py: {"cambios": [{old_path, new_path}], "quitadas": [...]}
+    (rutas absolutas; `mover` = {ruta vieja: ruta nueva, o None si se quitó sin reemplazo}). Lo aplica la próxima corrida
+    de nd_actualizar.py, la llame quien la llame. Devuelve la ruta del log (None si no hay nada que anotar)."""
+    cambios = [{"old_path": o, "new_path": n} for o, n in mover.items() if n and o != n]
+    quitadas = [o for o, n in mover.items() if not n]
+    if not cambios and not quitadas:
+        return None
+    os.makedirs(ND_PENDIENTES, exist_ok=True)
+    base = os.path.join(ND_PENDIENTES, f"{datetime.datetime.now():%Y%m%d-%H%M%S-%f}-{nombre}")
+    lp, k = base + ".json", 2
+    while os.path.exists(lp):
+        lp, k = f"{base}-{k}.json", k + 1
+    guardar_json(lp, {"de": nombre, "fecha": datetime.datetime.now().isoformat(timespec="seconds"),
+                      "cambios": cambios, "quitadas": quitadas, **(extra or {})})
+    return lp
+
+def guardar_json(ruta, datos, **kw):
+    """Escribe un JSON entero o no lo escribe (archivo temporal + os.replace): un corte nunca deja un JSON truncado."""
+    import json
+    tmp = f"{ruta}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(datos, f, ensure_ascii=kw.pop("ensure_ascii", False), **kw)
+    os.replace(tmp, ruta)
 
 def cache_path(nombre):
     return os.path.join(CACHE, nombre)
@@ -163,10 +193,11 @@ def cambiar_rutas(mover, nombre, equivalencias=()):
     sobra → la que queda): actualiza todo lo que guarda rutas y deja el log para Navidrome. Es el bloque que repetía cada
     script que mueve canciones (30 sep 2026): state de Antra (formato intacto), playlists .m3u (sin repetir una canción
     que la playlist ya tenía) y equivalencias.tsv. `equivalencias`: filas nuevas (spotify_id, ruta[, nota]) — p. ej. el
-    spotify_id de una copia quitada → la que queda. Respaldos en respaldos/ con la hora. Devuelve la ruta del log
-    logs/<nombre>-<hora>.json → `nd_actualizar.py <log>` pasa escuchas, estrellas e historial a la ruta nueva
-    (nombre=None: no escribe log, p. ej. repartir.py, que ya deja el suyo).
-    Ruta nueva None = la canción se QUITÓ sin reemplazo: sale del state, de las playlists y de las listas."""
+    spotify_id de una copia quitada → la que queda. Respaldos en respaldos/ con la hora. Devuelve la ruta del log que
+    deja en logs/nd-pendientes/ (2 oct: SIEMPRE, con `nombre` o «cambios»): la próxima corrida de nd_actualizar.py pasa
+    escuchas, estrellas, historial y playlists a la ruta nueva y purga las quitadas, sin que nadie tenga que pasárselo.
+    Ruta nueva None = la canción se QUITÓ sin reemplazo: sale del state, de las playlists y de las listas, y Navidrome
+    la purga (una canción BORRADA que se va a re-bajar no pasa por aquí: borrar_canciones.py la guarda «faltante»)."""
     import json, shutil
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     state = state_leer()
@@ -217,12 +248,7 @@ def cambiar_rutas(mover, nombre, equivalencias=()):
         if nuevo != ac:
             shutil.copy2(ac_p, os.path.join(RESPALDOS, f"ids-mb-aceptados.json.{stamp}"))
             json.dump(nuevo, open(ac_p, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))   # como ids_mb.py
-    if not nombre:
-        return None
-    lp = log_path(nombre)
-    json.dump({"cambios": [{"old_path": o, "new_path": n} for o, n in mover.items() if n],
-               "quitadas": [o for o, n in mover.items() if not n]}, open(lp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    return lp
+    return log_pendiente(nombre or "cambios", mover)
 
 def esperando_rebajar():
     """Rutas (relativas a ROOT) de canciones borradas que todavía no se re-bajaron: Navidrome las guarda como

@@ -22,8 +22,9 @@ Con --execute, en orden (se detiene si algo sale mal):
   6. Una fecha por disco (fechas.py) y géneros: lista de 20, hasta 2 por artista (generos.py).
   7. Números de pista (numeros_pista.py), carátulas (caratulas.py), letras (letras.py), ReplayGain (replaygain.py);
      7e. las que se borraron (corruptas/equivocadas) y ya se re-bajaron vuelven a sus playlists (devolver_playlists.py).
-  8. Navidrome (nd_actualizar.py): playlist del historial si hay --historial/--usuario; escaneo; reproducciones de
-     los archivos renumerados/duplicados pasan a su ruta nueva; sin canciones "faltantes".
+  8. Navidrome (nd_actualizar.py): playlist del historial si hay --historial/--usuario; escaneo; las reproducciones de
+     lo repartido/renumerado/duplicado pasan a su ruta nueva (logs pendientes de logs/nd-pendientes/); purga solo lo
+     que un log explica.
   9. Documento de pendientes (revisar.py), chequeo de salud (musica-salud.py) y kit de recuperación (kit_recuperacion.py).
 """
 import datetime, glob, json, os, subprocess, sys, time
@@ -221,18 +222,12 @@ run("5. repartir la carpeta en Artista/Año - Álbum", ["python3", "repartir.py"
 if not EXECUTE:
     print("\n(Simulación: los pasos 5c-9 dependen de que el 5 se haya ejecutado; se omiten.)")
     sys.exit()
-t5 = time.time()
 run("5c. duplicados: una sola copia de cada grabación", ["python3", "duplicados.py", "--execute"])
-duplog = max((f for f in glob.glob(os.path.join(LOGS, "duplicados-*.json")) if os.path.getmtime(f) >= t5),
-             key=os.path.getmtime, default=None)
 
 # 6-7
 run("6a. una fecha por disco", ["python3", "fechas.py", "--execute"])
 run("6b. géneros (lista de 20, hasta 2 por artista)", ["python3", "generos.py", "--execute", "--sin-respaldo"])
-t7 = time.time()
 run("7a. números de pista", ["python3", "numeros_pista.py", "--execute"])
-tnlog = max((f for f in glob.glob(os.path.join(LOGS, "tracknums-log-*.json")) if os.path.getmtime(f) >= t7),
-            key=os.path.getmtime, default=None)
 run("7b. carátulas faltantes", ["python3", "caratulas.py", "--execute"])
 run("7c. letras (sincronizadas en LYRICS, LRCLIB, instrumentales)", ["python3", "letras.py", "--execute"])
 run("7d. volumen parejo (ReplayGain) de los discos nuevos", ["python3", "replaygain.py", "--execute"])
@@ -244,18 +239,11 @@ if PRUEBA:
 else:
     if zipf:
         run("8a. playlist del historial", ["python3", "playlist_historial.py", zipf, user, "--min-plays", "1", "--execute"])
-    # el reparto (carpeta de la descarga → su disco) también va a Navidrome, PRIMERO: si Navidrome ya vio las canciones
-    # en la carpeta de la descarga (escaneo, o re-bajadas que reconoce solo con sus escuchas viejas), sus escuchas están
-    # en esa ruta y se perdían al repartir (27 sep: 106 escuchas de las 9 re-bajadas)
-    reorg_nd = None
-    if os.path.exists(reorg_log):
-        cambios = [{"old_path": os.path.join(ROOT, a), "new_path": os.path.join(ROOT, b)}
-                   for a, b in json.load(open(reorg_log, encoding="utf-8")).get("links", [])]
-        if cambios:
-            reorg_nd = os.path.join(LOGS, f"nd-reorg-{folder}-{stamp}.json")
-            json.dump({"cambios": cambios}, open(reorg_nd, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    run("8b. Navidrome al día (escaneo, IDs migrados, sin faltantes)",
-        ["python3", "nd_actualizar.py", *[l for l in (reorg_nd, duplog, tnlog) if l], *(["--usuario", user] if user else [])])
+    # 2 oct: el reparto (carpeta de la descarga → su disco: ahí estaban las escuchas de las re-bajadas, 27 sep), los
+    # duplicados y los números de pista dejaron cada uno su log en logs/nd-pendientes/; nd_actualizar.py los aplica
+    # todos en orden, y si falla quedan pendientes para la próxima corrida (antes se perdían)
+    run("8b. Navidrome al día (escaneo, logs pendientes migrados, purga solo lo explicado)",
+        ["python3", "nd_actualizar.py", *(["--usuario", user] if user else [])])
 
 # 9
 run("9a. documento de pendientes", ["python3", "revisar.py"])

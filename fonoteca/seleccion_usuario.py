@@ -21,7 +21,7 @@ Salida: <carpeta de listas>/<Nombre>/<NOMBRE>-<n>.txt (enlaces para pegar en una
 """
 import collections, datetime, glob, json, os, re, sys, urllib.parse, urllib.request, zipfile
 from audio import abrir, es_audio
-from comun import ROOT, HERE, LISTAS, cache_path, es_de_album, clave_titulo, clave_artista
+from comun import ROOT, LISTAS, cache_path, es_de_album, clave_titulo, clave_artista
 from red import Cache, pagina, pedir_json
 
 args = sys.argv[1:]

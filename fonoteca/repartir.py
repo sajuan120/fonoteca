@@ -349,7 +349,7 @@ try:
     # playlists .m3u, equivalencias.tsv e ids-mb-aceptados.json también guardan rutas (30 sep: una canción de prueba
     # adoptada en MP3 está en «Descubrir» y al repartirla su línea quedaba rota)
     from comun import cambiar_rutas
-    cambiar_rutas(smap, None)
+    cambiar_rutas(smap, "reorg")   # 2 oct: deja el log pendiente para nd_actualizar.py
     save_log()
 except Exception as e:
     save_log({"error": repr(e)})

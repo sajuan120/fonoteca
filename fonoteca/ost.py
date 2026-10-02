@@ -16,7 +16,7 @@ Reglas (decididas el 28 y el 30 sep):
   · Si la obra YA tiene su «Soundtrack <Obra>», las canciones nuevas se SUMAN y se renumera todo por fecha.
   · Lo que ya está agrupado o no existe se salta solo: correrlo de nuevo no cambia nada.
 State de Antra, playlists y listas al día (comun.cambiar_rutas); respaldo de las etiquetas en respaldos/tags-antes-ost-<hora>.json.
-Después (con --seguir se hace solo): replaygain.py <carpetas> --forzar --execute, generos.py --execute y nd_actualizar.py <log>.
+Después (con --seguir se hace solo): replaygain.py <carpetas> --forzar --execute, generos.py --execute y nd_actualizar.py (aplica los logs pendientes).
 """
 import datetime, glob, json, os, re, subprocess, sys
 from audio import abrir, es_audio
@@ -122,10 +122,10 @@ json.dump(antes, open(os.path.join(RESPALDOS, f"tags-antes-ost-{stamp}.json"), "
 log = cambiar_rutas(mover, "ost")
 print(f"HECHO: {len(mover)} canciones en {len(plan)} disco(s) «Soundtrack X». Log: {log}")
 if not SEGUIR:
-    print(f"Siguiente: replaygain.py <carpetas> --forzar --execute · generos.py --execute · nd_actualizar.py {log}   (o --seguir)")
+    print("Siguiente: replaygain.py <carpetas> --forzar --execute · generos.py --execute · nd_actualizar.py   (o --seguir)")
     sys.exit()
 for cmd in (["replaygain.py", *finales, "--forzar", "--execute"], ["generos.py", "--execute"]):
     print(f"\n=== {cmd[0]}", flush=True)
     if subprocess.run([sys.executable, os.path.join(HERE, cmd[0]), *cmd[1:]]).returncode != 0:
-        sys.exit(f"Falló {cmd[0]}: sigue a mano desde ahí (nd_actualizar.py {log} al final).")
-subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py"), log])
+        sys.exit(f"Falló {cmd[0]}: sigue a mano desde ahí (nd_actualizar.py al final: los logs quedaron pendientes).")
+subprocess.run([sys.executable, os.path.join(HERE, "nd_actualizar.py")])   # 2 oct: aplica todos los logs pendientes

@@ -21,7 +21,7 @@ import codecs, datetime, glob, json, os, re, secrets, shutil, signal, sqlite3, s
 import unicodedata, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from comun import (CONF, HERE, ROOT, LOGS, RESPALDOS, LISTAS, KIT, PORTADAS_IA, NAVIDROME, NAVIDROME_DB, OCTO, SCRIPTS,
-                   DOC, DOC_FLAC, DOC_AUDITORIA, DUDOSAS, SKIP, PRUEBA, antra_abierto, sin_procesar, a_conseguir,
+                   DOC, DOC_FLAC, DOC_AUDITORIA, DUDOSAS, SKIP, PRUEBA, ND_PENDIENTES, antra_abierto, sin_procesar, a_conseguir,
                    esperando_rebajar, rutas_por_sid)
 from audio import es_audio, con_perdida
 
@@ -205,12 +205,13 @@ A("biblioteca", "devolver", "DEVOLVER A SUS PLAYLISTS",
   "Las canciones borradas (corruptas o equivocadas) que ya se volvieron a bajar vuelven a su lugar en sus playlists.",
   ["devolver_playlists.py"])
 A("biblioteca", "nd", "NAVIDROME AL DÍA",
-  "Escaneo, escuchas y estrellas de las rutas viejas a las nuevas (con los logs, en orden) y sin faltantes. El panel "
-  "lo corre solo después de lo que mueve canciones; esto es por si quedó un log sin pasar.",
+  "Escaneo; aplica en orden todos los logs pendientes (escuchas, estrellas y playlists de las rutas viejas a las nuevas) "
+  "y purga solo lo que un log explica. Si queda algo faltante sin explicar, no purga y avisa.",
   ["nd_actualizar.py"], tipo="directo", boton="PONER AL DÍA", prueba=False,
-  campos=[C("logs", "LOGS", "logs", ayuda="opcional: logs con cambios de ruta, el más viejo primero"),
-          C("usuario", "DUEÑO DE PLAYLIST", "usuario", ayuda="opcional: _Playlists/<Nombre>.m3u queda a su nombre")],
-  args=lambda v: [*v["logs"], *_opt("--usuario", v["usuario"])])
+  campos=[C("logs", "LOGS EXTRA", "logs", ayuda="opcional: logs viejos fuera de nd-pendientes/"),
+          C("usuario", "DUEÑO DE PLAYLIST", "usuario", ayuda="opcional: _Playlists/<Nombre>.m3u queda a su nombre"),
+          C("huerfanas", "purgar también lo faltante que ningún log explica (ya revisado)", "casilla")],
+  args=lambda v: [*v["logs"], *_opt("--usuario", v["usuario"]), *(["--purgar-huerfanas"] if v["huerfanas"] else [])])
 
 # 04 A MANO
 A("mano", "quitar", "QUITAR UNA COPIA",
@@ -502,19 +503,17 @@ class Trabajo:
                 self.sistema("(modo prueba: Navidrome no se toca)")
             elif mueve and self.detener_pedido:   # 2 oct: antes callaba (y estos scripts escriben su log al final)
                 self.sistema("ATENCIÓN: se detuvo a mitad de mover canciones. Puede haber archivos movidos sin log o "
-                             "con nombre oculto (.tn-tmp-N). No corras nada más ni NAVIDROME AL DÍA: revisa la salida primero."
-                             + (" Logs que dejó: " + " ".join(_casa(p) for p in logs_de_cambios(self.inicio))
-                                if logs_de_cambios(self.inicio) else ""))
-            elif mueve and not self.detener_pedido:
-                logs = logs_de_cambios(self.inicio)
-                if rc == 0 and logs:
-                    self.sistema("NAVIDROME: las escuchas, estrellas y playlists pasan a las rutas nuevas")
-                    rc = self._uno([PY, "-u", os.path.join(HERE, "nd_actualizar.py"), *logs])
+                             "con nombre oculto (.tn-tmp-N). Revisa la salida; NAVIDROME AL DÍA aplica lo que quedó anotado "
+                             "en logs/nd-pendientes/" + (f" ({len(pendientes_nd())} log(s) pendientes)." if pendientes_nd() else "."))
+            elif mueve:
+                if rc == 0 and pendientes_nd():
+                    self.sistema("NAVIDROME: las escuchas, estrellas y playlists pasan a las rutas nuevas (logs pendientes)")
+                    rc = self._uno([PY, "-u", os.path.join(HERE, "nd_actualizar.py")])
                 elif rc == 0:
                     self.sistema("Nada que pasar a Navidrome: ninguna canción cambió de ruta.")
-                elif logs:
-                    self.sistema("ATENCIÓN: terminó con error y dejó cambios de ruta SIN pasar a Navidrome. Revisa la "
-                                 "salida y usa NAVIDROME AL DÍA con: " + " ".join(_casa(p) for p in logs))
+                elif pendientes_nd():
+                    self.sistema("ATENCIÓN: terminó con error y dejó cambios de ruta anotados en logs/nd-pendientes/: "
+                                 "revisa la salida y después NAVIDROME AL DÍA (los aplica todos).")
         except Exception as e:   # un error del panel, no del script
             self.sistema(f"ERROR DEL PANEL: {e!r}")
         finally:
@@ -582,22 +581,10 @@ class Trabajo:
         with open(os.path.join(REGISTRO, nombre), "w", encoding="utf-8") as fh:
             fh.write("\n".join(cab + self.lineas + ([self.parcial] if self.parcial else [])) + "\n")
 
-def logs_de_cambios(desde):
-    """Los logs de cambios de ruta (old_path → new_path) escritos desde `desde`, del más viejo al más nuevo: lo que
-    nd_actualizar.py necesita para pasar las escuchas. Los suyos (nd-*) no: esos ya los escribe él."""
-    res = []
-    for p in glob.glob(os.path.join(LOGS, "*.json")):
-        try:
-            if os.path.getmtime(p) < desde - 1 or os.path.basename(p).startswith("nd-"):
-                continue
-            d = json.load(open(p, encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        c = d.get("cambios") if isinstance(d, dict) else None
-        if isinstance(c, list) and any(isinstance(x, dict) and x.get("old_path") and x.get("new_path")
-                                       and x["old_path"] != x["new_path"] for x in c):
-            res.append(p)
-    return sorted(res, key=os.path.getmtime)
+def pendientes_nd():
+    """Los logs de cambios de ruta que Navidrome todavía no aplicó (logs/nd-pendientes/, 2 oct): los deja todo lo que
+    mueve canciones y nd_actualizar.py los aplica en orden."""
+    return sorted(glob.glob(os.path.join(ND_PENDIENTES, "*.json")))
 
 def ocupado():
     return TRABAJO is not None and TRABAJO.estado == "corriendo"
@@ -697,7 +684,7 @@ def _calcular():
     return {"canciones": canciones, "perdida": perdida, "prueba": prueba,
             "descargas": sorted({p.split(os.sep)[0] for p in sp if p.count(os.sep) == 1}),
             "sueltas": sum(1 for p in sp if p.count(os.sep) != 1), "conseguir": len(a_conseguir()),
-            "dudosas": len(rutas_por_sid(dud)), "rebajar": len(esperando_rebajar())}
+            "dudosas": len(rutas_por_sid(dud)), "rebajar": len(esperando_rebajar()), "nd_pendientes": len(pendientes_nd())}
 
 def _refrescador():
     global PESADO
@@ -1422,7 +1409,8 @@ function pintarLogo() {
 const TELE = [
   ['SISTEMA', [['biblioteca', 'BIBLIOTECA'], ['disco', 'DISCO'], ['navidrome', 'NAVIDROME'], ['octo', 'OCTO-FIESTA'], ['antra', 'ANTRA']]],
   ['COLAS', [['sinproc', 'SIN PROCESAR', 'descargas'], ['conseguir', 'A CONSEGUIR', 'descargas'], ['perdida', 'CON PÉRDIDA', 'revision'],
-             ['dudosas', 'DUDOSAS', 'revision'], ['rebajar', 'ESPERAN RE-DESCARGA', 'revision'], ['prueba', 'PRUEBA', 'embudo']]],
+             ['dudosas', 'DUDOSAS', 'revision'], ['rebajar', 'ESPERAN RE-DESCARGA', 'revision'], ['prueba', 'PRUEBA', 'embudo'],
+             ['ndpend', 'NAVIDROME PENDIENTE', 'biblioteca']]],
   ['INTEGRIDAD', [['salud', 'SALUD', 'revision'], ['auditoria', 'AUDITORÍA', 'revision']]],
 ];
 function pintarTele() {
@@ -1787,6 +1775,7 @@ function pintarEstado() {
     valor('perdida', e.perdida ? `${num(e.perdida)} CANCIONES` : '0', 'ok');
     valor('dudosas', e.dudosas ? `${num(e.dudosas)} A ESCUCHAR` : '0', 'ok');
     valor('rebajar', num(e.rebajar), 'ok');
+    valor('ndpend', e.nd_pendientes ? `${e.nd_pendientes} LOG${e.nd_pendientes > 1 ? 'S' : ''} · PONER AL DÍA` : '0 · NOMINAL', e.nd_pendientes ? 'acento' : 'ok');
     valor('prueba', `${num(e.prueba)} MP3` + (e.promovidas ? ` · ${e.promovidas} GANARON FLAC` : ''), 'ok');
   }
   const s = e.salud;
