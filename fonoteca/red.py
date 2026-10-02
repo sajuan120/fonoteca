@@ -18,7 +18,7 @@ Uso:   from red import Cache, pedir_json, pedir_bytes, pagina
        d = pedir_json("https://api.deezer.com/track/isrc:USUM71703089", dz)   # JSON · {} = no existe · None = sin respuesta
 """
 import atexit, json, os, subprocess, time, urllib.error, urllib.parse, urllib.request
-from comun import UA, cache_path
+from comun import UA, cache_path, leer_json
 
 RITMO = {"api.deezer.com": 0.12, "musicbrainz.org": 1.1, "lrclib.net": 0.2, "api.acoustid.org": 0.34,
          "itunes.apple.com": 3.2,   # iTunes Search admite ~20 consultas por minuto
@@ -41,8 +41,8 @@ class Cache(dict):
         self.ruta, self.cada, self.solo_leer = cache_path(nombre), cada, solo_leer
         self._nuevas, self._quitadas = {}, set()
         try:
-            super().__init__(json.load(open(self.ruta, encoding="utf-8")))
-        except (OSError, ValueError):
+            super().__init__(leer_json(self.ruta, {}) or {})   # 2 oct: una caché rota se aparta y avisa (no se pisa en silencio)
+        except OSError:
             super().__init__()
         if not solo_leer:
             atexit.register(self.guardar)

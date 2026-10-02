@@ -20,7 +20,7 @@ PRUEBA = "MUSIC_ROOT" in os.environ
 ROOT = os.environ.get("MUSIC_ROOT", ruta("biblioteca", "~/Music"))   # biblioteca
 DATOS = os.environ.get("MUSIC_DATOS", HERE)                    # logs, planes, respaldos y listas
 LOGS = os.path.join(DATOS, "logs")            # logs de cada paso (para revisar o revertir)
-CACHE = os.path.join(HERE, "cache")           # respuestas de Deezer / MusicBrainz / LRCLIB guardadas (se comparte)
+CACHE = os.environ.get("MUSIC_CACHE", os.path.join(HERE, "cache"))   # respuestas de Deezer / MusicBrainz / LRCLIB guardadas (se comparte; el banco usa la suya)
 RESPALDOS = os.path.join(DATOS, "respaldos")  # respaldos de tags y del state de Antra
 PLANES = os.path.join(DATOS, "planes")        # último plan de cada paso (para mirar qué haría o qué hizo)
 # 2 oct: cada cambio de ruta deja un log en nd-pendientes/; nd_actualizar.py los aplica TODOS, en orden, y los pasa a

@@ -181,7 +181,10 @@ def iso(ts):
 
 
 def avisar(titulo, cuerpo):
-    subprocess.run(["notify-send", "-a", "Música", "-i", "folder-music", "-t", "0", titulo, cuerpo], check=False)
+    try:
+        subprocess.run(["notify-send", "-a", "Música", "-i", "folder-music", "-t", "0", titulo, cuerpo], check=False)
+    except OSError:   # sin notify-send (otra máquina, el banco): el aviso va a la salida
+        print(f"[aviso] {titulo}: {cuerpo}", file=sys.stderr)
 
 
 def indice_biblioteca():

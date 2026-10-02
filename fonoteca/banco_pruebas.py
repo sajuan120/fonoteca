@@ -2,7 +2,13 @@
 """Banco de pruebas: corre procesar_descarga.py COMPLETO sobre una biblioteca de mentira y comprueba el resultado.
 Correrlo después de cambiar cualquier script. No toca la biblioteca real, ni sus listas/logs, ni Navidrome.
 
-Uso: banco_pruebas.py            (tarda 1-3 min; deja todo en rutas.banco de config.toml para mirarlo, se rehace cada vez)
+Uso: banco_pruebas.py [--sintetico]   (tarda 1-3 min; deja todo en rutas.banco de config.toml para mirarlo, se rehace cada vez)
+
+Con la biblioteca real a mano usa COPIAS de sus canciones (la lista está abajo: adáptala a tus discos). Sin ella (otra
+máquina, o con --sintetico) las FABRICA (2 oct): tonos de ffmpeg de 30 s con las etiquetas y la carátula que tendría cada
+una, y lo que Deezer diría de ellas (duración, género, lista del disco) sembrado en una caché propia del banco, así corre
+sin red; lo que exige red o la grabación real (AcoustID, la vista previa de Spotify, los IDs de MusicBrainz: escenarios
+5 y 7) se salta y se dice «⏭». En los dos modos el banco usa su propia caché (copia de la real) y su propio config.toml.
 
 Arma (con COPIAS de canciones reales, sin tags de procesado, como si recién las bajara Antra):
   - biblioteca: el soundtrack de Shrek 2 (2 canciones) y 3 interludios de Gorillaz "Humanz";
@@ -33,38 +39,120 @@ Escenario 7 (27 sep): IDs de MusicBrainz. a) Thriller con el error de Picard (Ba
 Escenario 8 (28 sep): otros formatos. a) una descarga con un MP3, un M4A (AAC) y un Opus (canciones reales convertidas,
   con sus etiquetas y carátula) → cada una termina procesada en su disco (junto a FLAC), con su extensión, ReplayGain,
   género y carátula, y el state de Antra apunta ahí; b) un MP3 cortado a la mitad → se borra, se anota y el procesado para.
+Escenario 9 (2 oct): dos descargas seguidas traen el audio de una canción que YA está en su disco, con otro spotify_id
+  → el procesado avisa del choque y la deja en su carpeta sin tocar la original; quitar_copia.py la aparta, el state de
+  Antra apunta a la original y su spotify_id queda en equivalencias.tsv; al final hay UNA copia en la biblioteca.
+Escenario 10 (2 oct): unir_discos.py con dos ediciones del MISMO disco (una canción repetida, una nueva): el destino como
+  «otra» se rechaza; la repetida va a respaldos, la nueva entra provisional (9NN) con el nombre y el año del destino, el
+  state, la playlist y el log pendiente apuntan al destino, y la 2ª corrida no toca nada.
+Escenario 11 (2 oct): numeros_pista.py cortado entre sus dos pasos de renombrado (quedan .tn-tmp-N y
+  tracknums-en-curso.json) → la siguiente corrida lo termina y el state queda sano.
+Escenario 12 (2 oct): el embudo (prueba.py revisar) reemplaza un MP3 de _Prueba por su FLAC por ISRC solo si dura lo
+  mismo: el que dura 10 s menos (otra edición) se queda, y el reemplazado va a respaldos con su log pendiente.
 """
-import glob, hashlib, json, os, shutil, subprocess, sys
-from mutagen.flac import FLAC
+import glob, hashlib, io, json, os, re, shutil, subprocess, sys, time
+from mutagen.flac import FLAC, Picture
 from audio import abrir, es_audio
 
-from comun import ruta, BANCO, DOC, DOC_FLAC, DOC_AUDITORIA
-REAL = ruta("biblioteca", "~/Music")   # la biblioteca de verdad (de ahí salen las canciones de prueba; no se toca)
+from comun import ruta, BANCO, DOC, DOC_FLAC, DOC_AUDITORIA, CONF, CACHE as CACHE_REAL
+REAL_BIB = ruta("biblioteca", "~/Music")   # la biblioteca de verdad (de ahí salen las canciones de prueba; no se toca)
 HERE = os.path.dirname(os.path.abspath(__file__))
 T = BANCO                             # config.toml: rutas.banco (se rehace en cada corrida)
 M, D = os.path.join(T, "Music"), os.path.join(T, "datos")
 DESC = "Prueba Descarga"
+SHREK, HUMANZ = "Soundtracks/2004 - Soundtrack Shrek 2", "Gorillaz/2017 - Humanz (Deluxe)"   # 28 sep: OST por franquicia
+# 2 oct: MODO SINTÉTICO. Sin la biblioteca real (otra máquina, o --sintetico) las canciones se fabrican: un tono de
+# ffmpeg de 30 s con las etiquetas y la carátula que tendría la real, y las respuestas de Deezer que harían falta
+# (duración, género, lista del disco) sembradas en una caché propia. Lo que exige red o la grabación real (AcoustID,
+# la vista previa de Spotify, los IDs de MusicBrainz) se salta y se dice.
+SINTETICO = "--sintetico" in sys.argv or not os.path.isdir(os.path.join(REAL_BIB, SHREK))
+REAL = os.path.join(T, "real") if SINTETICO else REAL_BIB
+CACHE = os.path.join(T, "cache")      # caché propia: copia de la real (si hay) + lo sembrado; el banco no ensucia la real
+print(f"banco de pruebas: {'SINTÉTICO (canciones fabricadas, sin red)' if SINTETICO else 'con canciones reales de ' + REAL_BIB} → {T}")
+
 def real(carpeta, titulo):
     """Ruta (relativa a REAL) de UNA canción real, por su título con cualquier número adelante: los números cambian al
-    renumerar (27 sep: «15 - Funk Ad» pasó a «16 - Funk Ad» y el banco se caía al armar)."""
+    renumerar (27 sep: «15 - Funk Ad» pasó a «16 - Funk Ad» y el banco se caía al armar). En modo sintético la fabrica."""
+    if SINTETICO:
+        return fabricar(carpeta, titulo)
     ms = glob.glob(os.path.join(glob.escape(os.path.join(REAL, carpeta)), "*" + glob.escape(f" - {titulo}.flac")))
     assert len(ms) == 1, f"banco: no encuentro UNA canción real «{titulo}» en {carpeta}: {ms}"
     return os.path.relpath(ms[0], REAL)
-SHREK, HUMANZ = "Soundtracks/2004 - Soundtrack Shrek 2", "Gorillaz/2017 - Humanz (Deluxe)"   # 28 sep: OST por franquicia
-LIB = [real(SHREK, "Accidentally In Love - From _Shrek 2_ Soundtrack"), real(SHREK, "Holding Out For A Hero"),
-       real(HUMANZ, "Interlude_ Elevator Going Up"), real(HUMANZ, "Interlude_ Penthouse"), real(HUMANZ, "Interlude_ The Elephant")]
-NUEVAS = [(LIB[0], {"title": ["Accidentally In Love"], "album": ["Accidentally In Love"], "albumartist": ["Counting Crows"],
-                    "spotify_id": ["4ccM2xBxicGigjLqt6A0YY"]}),   # el single: audio del soundtrack, tags del single
-          real(HUMANZ, "Interlude_ Talk Radio"), real("Daft Punk/1997 - Homework", "WDPK 83.7 FM"),
-          real("Rawayana/2026 - ¿Dónde Es El After_", "Si Te Pica Es Porque Eres Tú")]
-FUNK_AD = real("Daft Punk/1997 - Homework", "Funk Ad")
-NO_BAJO = "53QdfEoKCXlEfjgXPmvPjx"   # Shaky Shaky (Remix), Daddy Yankee
-PROCESADO = ("musicbrainz_", "replaygain_", "genre_deezer", "originaldate")   # tags que pone el procesado: se quitan
+
+# ---------- modo sintético: fabricar canciones y sembrar Deezer ----------
+POSICIONES = {   # discos cuyos números importan en los escenarios (el resto: por orden de fabricación)
+    "Daft Punk/1997 - Homework": ["Daftendirekt", "WDPK 83.7 FM", "Revolution 909", "Da Funk", "Phoenix", "Fresh", "Around the World",
+                                  "Rollin' & Scratchin'", "Teachers", "High Fidelity", "Rock'n Roll", "Oh Yeah", "Burnin'", "Indo Silver Club", "Alive", "Funk Ad"],
+    "Pink Floyd/1973 - The Dark Side of the Moon": ["Speak to Me", "Breathe (In the Air)", "On the Run", "Time", "The Great Gig in the Sky", "Money"],
+    "Foster The People/2011 - Torches": ["Helena Beat", "Pumped Up Kicks", "Call It What You Want"]}
+ARTISTA_SINT = {"Soundtracks": {"Accidentally In Love - From _Shrek 2_ Soundtrack": "Counting Crows", "Holding Out For A Hero": "Bonnie Tyler"}}
+GENERO_SINT = {"Daft Punk": "Dance", "Gorillaz": "Rap/Hip Hop", "Rawayana": "Latin Music", "Pink Floyd": "Rock", "Foster The People": "Rock"}
+_fabricadas = {}   # carpeta → [títulos] en orden de fabricación
+
+def _h(s, n=8):
+    return int(hashlib.sha1(s.encode()).hexdigest()[:n], 16)
+
+def sembrar(nombre, entradas):
+    """Agrega entradas a una caché de red.py en CACHE (se mezcla con lo que haya: los scripts también escriben ahí)."""
+    os.makedirs(CACHE, exist_ok=True)
+    p = os.path.join(CACHE, nombre)
+    d = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    d.update(entradas)
+    json.dump(d, open(p + ".tmp", "w", encoding="utf-8"), ensure_ascii=False); os.replace(p + ".tmp", p)
+
+def fabricar(carpeta, titulo):
+    """Fabrica (si no está) la canción «carpeta/NN - titulo.flac» bajo REAL y siembra lo que Deezer diría de ella y de su
+    disco. Devuelve la ruta relativa a REAL."""
+    artista, disco = carpeta.split("/", 1)
+    anio, album = disco.split(" - ", 1)
+    lista = POSICIONES.get(carpeta)
+    if lista:
+        assert titulo in lista, f"banco sintético: «{titulo}» no está en POSICIONES de {carpeta}"
+    fab = _fabricadas.setdefault(carpeta, [])
+    if titulo not in fab:
+        fab.append(titulo)
+    pos = lista.index(titulo) + 1 if lista else fab.index(titulo) + 1
+    rel = os.path.join(carpeta, f"{pos:02d} - {titulo}.flac")
+    p = os.path.join(REAL, rel)
+    if os.path.exists(p):
+        return rel
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency={200 + _h(rel) % 600}:duration=30",
+                    "-ar", "44100", "-ac", "2", "-sample_fmt", "s16", p], check=True)
+    art = ARTISTA_SINT.get(artista, {}).get(titulo, artista)
+    aa = "Various Artists" if artista == "Soundtracks" else artista
+    genero = GENERO_SINT.get(artista, "Pop")
+    isrc = f"ZZBAN{_h(rel) % 10**7:07d}"
+    t = FLAC(p)
+    t.update(title=[titulo], artist=[art], albumartist=[aa], album=[album], date=[f"{anio}-01-01"], year=[anio], tracknumber=[str(pos)],
+             discnumber=["1"], isrc=[isrc], spotify_id=[hashlib.sha1(rel.encode()).hexdigest()[:22]], genre=[genero], genre_deezer=[genero], antra_downloaded=["1"],
+             replaygain_track_gain=["-3.00 dB"], replaygain_track_peak=["0.5"], replaygain_album_gain=["-3.00 dB"], replaygain_album_peak=["0.5"])
+    from PIL import Image
+    buf = io.BytesIO(); Image.new("RGB", (64, 64), (_h(rel) % 256, 90, 140)).save(buf, "PNG")
+    pic = Picture(); pic.type, pic.mime, pic.data, pic.width, pic.height, pic.depth = 3, "image/png", buf.getvalue(), 64, 64, 24
+    t.add_picture(pic); t.save()
+    # lo que Deezer diría: la canción por ISRC, su disco (género) y la lista del disco con lo fabricado hasta ahora
+    aid = 990000000 + _h(carpeta) % 10**6
+    import urllib.parse
+    pistas = []
+    for tit in fab:
+        q = lista.index(tit) + 1 if lista else fab.index(tit) + 1
+        f = FLAC(os.path.join(REAL, carpeta, f"{q:02d} - {tit}.flac"))
+        pistas.append({"id": _h(tit) % 10**8, "track_position": q, "disk_number": 1, "isrc": f["isrc"][0], "title": tit, "duration": round(f.info.length)})
+    disco_dz = {"id": aid, "title": album, "release_date": f"{anio}-01-01", "nb_tracks": len(pistas), "artist": {"name": aa},
+                "genres": {"data": [{"name": genero}]}}
+    sembrar("deezer-cache.json", {f"https://api.deezer.com/track/isrc:{isrc}": {"id": _h(titulo) % 10**8, "title": titulo, "isrc": isrc, "duration": 30,
+                                  "track_position": pos, "disk_number": 1, "artist": {"name": art}, "album": {"id": aid, "title": album}},
+                                  f"https://api.deezer.com/album/{aid}": disco_dz})
+    sembrar("deezer-numeros.json", {f"https://api.deezer.com/album/{aid}": disco_dz,
+                                    f"https://api.deezer.com/album/{aid}/tracks?limit=300": {"data": pistas},
+                                    "https://api.deezer.com/search/album?limit=50&q=" + urllib.parse.quote(f'artist:"{aa}" album:"{album}"'): {"data": [{"id": aid, "title": album}]}})
+    return rel
 
 def huella():
     """Estado de lo real que NO debe cambiar: canciones de la biblioteca y listas/planes reales."""
-    n = sum(1 for d, _, fs in os.walk(REAL) for f in fs if es_audio(f) and os.path.relpath(d, REAL).count(os.sep) >= 1
-            and os.path.relpath(d, REAL).split(os.sep)[0] != "_Prueba")   # _Prueba cambia sola (Octo-Fiesta)
+    n = 0 if SINTETICO else sum(1 for d, _, fs in os.walk(REAL) for f in fs if es_audio(f) and os.path.relpath(d, REAL).count(os.sep) >= 1
+                                and os.path.relpath(d, REAL).split(os.sep)[0] != "_Prueba")   # _Prueba cambia sola (Octo-Fiesta)
     h = hashlib.sha1()
     for f in ["revisar_fallidas.tsv", "revisar_dudosas.tsv", "planes/plan-reparto.json", "planes/plan-generos.json",
               DOC, DOC_FLAC, DOC_AUDITORIA]:   # 1 oct: también los documentos reales (el banco pisaba el «conseguir en FLAC»)
@@ -78,7 +166,40 @@ antes = huella()
 if os.path.isdir(T) and os.listdir(T) and not (os.path.isdir(M) and os.path.isdir(D)):
     sys.exit(f"{T} tiene otras cosas (no es un banco anterior): no la toco. Revisa rutas.banco en config.toml.")
 shutil.rmtree(T, ignore_errors=True)
-os.makedirs(os.path.join(M, "_Playlists")); os.makedirs(os.path.join(T, "listas", "Prueba")); os.makedirs(D)
+os.makedirs(os.path.join(M, "_Playlists")); os.makedirs(os.path.join(T, "listas", "Prueba")); os.makedirs(D); os.makedirs(CACHE)
+if os.path.isdir(CACHE_REAL):   # la caché real se copia: con red se aprovecha, y lo que el banco pida no la ensucia
+    for f in glob.glob(os.path.join(CACHE_REAL, "*.json")):
+        shutil.copy(f, CACHE)
+if SINTETICO:   # sin red los reintentos de red.py no duermen; y la «página pública de Spotify» de la que no bajó
+    os.makedirs(os.path.join(T, "site")); open(os.path.join(T, "site", "sitecustomize.py"), "w").write("import time\ntime.sleep = lambda s: None\n")
+    sembrar("spotify-publico.json", {"track:53QdfEoKCXlEfjgXPmvPjx": {"titulo": "Shaky Shaky (Remix)", "artistas": ["Daddy Yankee"], "disco": "Shaky Shaky",
+                                                                    "disco_id": "banco", "anio": "2016", "duracion": 220}})
+def _toml(v):
+    if isinstance(v, bool): return "true" if v else "false"
+    if isinstance(v, (int, float)): return str(v)
+    if isinstance(v, list): return "[" + ", ".join(_toml(x) for x in v) + "]"
+    return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
+def _tabla(nombre, d, out):
+    out.append(f"[{nombre}]" if nombre else "")
+    for k, v in d.items():
+        if not isinstance(v, dict): out.append(f"{k} = {_toml(v)}")
+    for k, v in d.items():
+        if isinstance(v, dict): _tabla(f"{nombre}.{k}" if nombre else k, v, out)
+conf = json.loads(json.dumps(CONF))   # copia; las rutas del banco apuntan al banco (Navidrome de mentira, listas, kit, Antra)
+conf.setdefault("rutas", {}).update(navidrome=os.path.join(T, "navidrome"), kit=os.path.join(T, "kit"), antra=os.path.join(T, "antra"),
+                                    listas=os.path.join(T, "listas"), banco=T)
+lineas = []; _tabla("", conf, lineas); open(os.path.join(T, "config.toml"), "w", encoding="utf-8").write("\n".join(lineas) + "\n")
+# ---------- las canciones ----------
+LIB = [real(SHREK, "Accidentally In Love - From _Shrek 2_ Soundtrack"), real(SHREK, "Holding Out For A Hero"),
+       real(HUMANZ, "Interlude_ Elevator Going Up"), real(HUMANZ, "Interlude_ Penthouse"), real(HUMANZ, "Interlude_ The Elephant")]
+NUEVAS = [(LIB[0], {"title": ["Accidentally In Love"], "album": ["Accidentally In Love"], "albumartist": ["Counting Crows"],
+                    "spotify_id": ["4ccM2xBxicGigjLqt6A0YY"]}),   # el single: audio del soundtrack, tags del single
+          real(HUMANZ, "Interlude_ Talk Radio"), real("Daft Punk/1997 - Homework", "WDPK 83.7 FM"),
+          real("Rawayana/2026 - ¿Dónde Es El After_", "Si Te Pica Es Porque Eres Tú")]
+FUNK_AD = real("Daft Punk/1997 - Homework", "Funk Ad")
+NO_BAJO = "53QdfEoKCXlEfjgXPmvPjx"   # Shaky Shaky (Remix), Daddy Yankee
+PROCESADO = ("musicbrainz_", "replaygain_", "genre_deezer", "originaldate")   # tags que pone el procesado: se quitan
+
 state = {}
 for rel in LIB:
     dst = os.path.join(M, rel); os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copy2(os.path.join(REAL, rel), dst)
@@ -103,8 +224,13 @@ open(os.path.join(T, "listas", "Prueba", "PRUEBA-5.txt"), "w").write(
 json.dump([{"date": "2026-09-24T00:00:00", "title": DESC, "total": 5, "downloaded": 4, "failed": 1, "skipped": 0}],
           open(os.path.join(T, "history.json"), "w"))
 
-env = dict(os.environ, MUSIC_ROOT=M, MUSIC_DATOS=D, MUSIC_DOC=os.path.join(T, "pendientes.md"),
-           ANTRA_HISTORY=os.path.join(T, "history.json"), MUSIC_LISTAS=os.path.join(T, "listas"))
+env = dict(os.environ, MUSIC_ROOT=M, MUSIC_DATOS=D, MUSIC_DOC=os.path.join(T, "pendientes.md"), MUSIC_CACHE=CACHE,
+           MUSIC_CONFIG=os.path.join(T, "config.toml"), ANTRA_HISTORY=os.path.join(T, "history.json"), MUSIC_LISTAS=os.path.join(T, "listas"))
+env.pop("FONOTECA_CERROJO", None)
+if SINTETICO:
+    env["PYTHONPATH"] = os.path.join(T, "site") + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+def salta(texto):
+    print("⏭  " + texto + " (solo con la biblioteca real y red)")
 # ---------- correr: simulación y ejecución ----------
 ok = True
 for modo in ([], ["--execute"]):
@@ -136,7 +262,8 @@ if ok:
         t = FLAC(p); n = os.path.basename(p)[:35]
         check(bool(t.get("genre")) and len(t["genre"]) <= 2 and bool(t.get("genre_deezer")), f"{n}: género {t.get('genre')} y original guardado")
         check(bool(t.get("replaygain_track_gain")), f"{n}: ReplayGain {t.get('replaygain_track_gain')}")
-        check(bool(t.get("musicbrainz_trackid")) or "Rawayana" in p, f"{n}: ID de MusicBrainz")
+        if SINTETICO: salta(f"{n}: ID de MusicBrainz")
+        else: check(bool(t.get("musicbrainz_trackid")) or "Rawayana" in p, f"{n}: ID de MusicBrainz")
     st = json.load(open(os.path.join(M, ".antra_state.json")))
     check(all(os.path.exists(v) for v in st.values()), "state de Antra: ninguna ruta rota")
     check(os.path.exists(os.path.join(T, "pendientes.md")), "documento de pendientes generado")
@@ -231,7 +358,7 @@ if ok:
           and "Interlude_ The Elephant" in pl[fa[0] + 1],
           "la corrupta re-bajada volvió a su playlist, en su mismo lugar (antes de su vecina de siempre)")
 # ---------- escenario 5: audio equivocado que AcoustID no conoce (el CANDY Remix del 25 sep) ----------
-REEA = os.path.join(REAL, real("Reea/2011 - Need Me Baby", "Need Me Baby - Radio Edit"))   # AcoustID no la conoce
+REEA = os.path.join(REAL, real("Reea/2011 - Need Me Baby", "Need Me Baby - Radio Edit")) if not SINTETICO else None   # AcoustID no la conoce
 def descarga_suelta(nombre, archivo, fabricar):
     """Arma una descarga de Antra de una canción: carpeta, state e historial; fabricar(destino) crea el audio."""
     os.makedirs(os.path.join(M, nombre)); fabricar(archivo)
@@ -250,7 +377,9 @@ def descarga_suelta(nombre, archivo, fabricar):
                        capture_output=True, text=True)
     open(os.path.join(T, f"salida-{nombre.lower().replace(' ', '-')}.txt"), "w").write(r.stdout + r.stderr)
     return r, sid
-if ok:   # 5a: el audio es OTRA canción (Daramola) con las etiquetas de la correcta (Reea): 7,5 s menos, AcoustID no la conoce
+if ok and SINTETICO:
+    salta("escenario 5 (audio equivocado / cortado: AcoustID y la vista previa de Spotify)")
+if ok and not SINTETICO:   # 5a: el audio es OTRA canción (Daramola) con las etiquetas de la correcta (Reea): 7,5 s menos, AcoustID no la conoce
     def otro_audio(dst):
         shutil.copy2(os.path.join(REAL, real("Daramola/2026 - Gidi 2 Caracas (La Música)", "Gidi 2 Caracas - La Música")), dst)
         t = FLAC(dst); t.clear(); t.update({k: v for k, v in FLAC(REEA).tags}); t.save()
@@ -262,7 +391,7 @@ if ok:   # 5a: el audio es OTRA canción (Daramola) con las etiquetas de la corr
     fall = open(os.path.join(D, "revisar_fallidas.tsv"), encoding="utf-8").read()
     st = json.load(open(os.path.join(M, ".antra_state.json")))
     check(sid in fall and f"TRACK:spotify:{sid}" not in st, "otro audio: anotado para re-bajar y fuera del state de Antra")
-if ok:   # 5b: la canción CORRECTA pero 8 s más corta: es su audio (la vista previa coincide), ¿cortada u otra edición? → dudosa
+if ok and not SINTETICO:   # 5b: la canción CORRECTA pero 8 s más corta: es su audio (la vista previa coincide), ¿cortada u otra edición? → dudosa
     cortada = os.path.join(M, "Prueba Cortada", "01 - Need Me Baby - Radio Edit.flac")
     r, sid = descarga_suelta("Prueba Cortada", cortada, lambda dst: subprocess.run(
         ["ffmpeg", "-v", "error", "-i", REEA, "-t", f"{FLAC(REEA).info.length - 8:.2f}", "-map_metadata", "0", "-c:a", "flac", dst],
@@ -297,7 +426,9 @@ if ok:
     r2 = corrida(2)
     check(r2.returncode == 0 and "cambios: 0 canciones" in r2.stdout, "números: la 2ª corrida no cambia nada (ya no oscila)")
 # ---------- escenario 7: IDs de MusicBrainz equivocados (Picard por posición, 27 sep) ----------
-if ok:
+if ok and SINTETICO:
+    salta("escenario 7 (IDs de MusicBrainz equivocados)")
+if ok and not SINTETICO:
     from comun import nivel_titulo
     thr = "Michael Jackson/2008 - Thriller"
     os.makedirs(os.path.join(M, thr), exist_ok=True)
@@ -315,7 +446,7 @@ if ok:
         open(os.path.join(T, f"salida-ids-mb-{n}.txt"), "w").write(r.stdout + r.stderr)
         return r
     r1 = ids(1)
-    grabs = json.load(open(os.path.join(HERE, "cache", "ids-mb-grabaciones.json")))
+    grabs = json.load(open(os.path.join(CACHE, "ids-mb-grabaciones.json")))
     def bien(tit):
         rid = (FLAC(rutas[tit]).get("musicbrainz_trackid") or [""])[0]
         return rid and rid != buena["musicbrainz_trackid"][0] and (nivel_titulo(tit, (grabs.get(rid) or {}).get("title") or "") or 0) >= 2
@@ -383,6 +514,153 @@ if ok:   # 8b: MP3 cortado a la mitad (como el FLAC del escenario 2)
     st = json.load(open(os.path.join(M, ".antra_state.json")))
     check(r.returncode != 0 and "PARA" in (r.stdout + r.stderr) and not os.path.exists(dst) and "Da Funk" in fall
           and "TRACK:spotify:mp3-cortado" not in st, "MP3 cortado: se borra, se anota para re-bajar, sale del state y el procesado para")
+# ---------- escenario 9 (2 oct): dos descargas que traen el audio de una canción que YA está, con otro spotify_id ----------
+def descarga_de_copia(carp, origen, sid, nombre):
+    """Una descarga de Antra con una COPIA de `origen` (etiquetas de la biblioteca sin las del procesado, otro spotify_id)."""
+    dst = os.path.join(M, carp, nombre); os.makedirs(os.path.dirname(dst)); shutil.copy2(origen, dst)
+    t = FLAC(dst)
+    for k in [k for k in list(t.keys()) if k.lower().startswith(PROCESADO)]:
+        del t[k]
+    t["spotify_id"] = [sid]; t.save()
+    st = json.load(open(os.path.join(M, ".antra_state.json"))); st[f"TRACK:spotify:{sid}"] = dst
+    open(os.path.join(M, ".antra_state.json"), "w").write(json.dumps(st, indent=2, ensure_ascii=True))
+    h = json.load(open(os.path.join(T, "history.json")))
+    h.insert(0, {"date": f"2026-10-02T10:{len(h):02d}:00", "title": carp, "total": 1, "downloaded": 1, "failed": 0, "skipped": 0})
+    json.dump(h, open(os.path.join(T, "history.json"), "w"))
+    return dst
+if ok:
+    orig = os.path.join(M, LIB[2])   # un interludio de Humanz, en su disco con su número
+    sids9 = [hashlib.sha1(f"doble{i}".encode()).hexdigest()[:22] for i in (1, 2)]
+    for i, sid in enumerate(sids9, 1):
+        carp = f"Prueba Doble {i}"
+        dst = descarga_de_copia(carp, orig, sid, os.path.basename(orig))
+        r = subprocess.run(["python3", os.path.join(HERE, "procesar_descarga.py"), carp, "--execute"], env=env, cwd=HERE,
+                           capture_output=True, text=True)
+        open(os.path.join(T, f"salida-doble-{i}.txt"), "w").write(r.stdout + r.stderr)
+        check(r.returncode != 0 and "NO TERMINÓ" in r.stdout and os.path.exists(dst) and os.path.exists(orig),
+              f"doble {i}: el procesado avisa del choque con la que ya está, la deja en su carpeta y no toca la original")
+        r = subprocess.run(["python3", os.path.join(HERE, "quitar_copia.py"), os.path.relpath(dst, M), LIB[2], "--execute"], env=env,
+                           cwd=HERE, capture_output=True, text=True)
+        open(os.path.join(T, f"salida-doble-{i}-quitar.txt"), "w").write(r.stdout + r.stderr)
+        st = json.load(open(os.path.join(M, ".antra_state.json")))
+        check(r.returncode == 0 and not os.path.exists(dst) and st.get(f"TRACK:spotify:{sid}") == orig,
+              f"doble {i}: quitar_copia la aparta y el state de Antra apunta a la original")
+    nombre = os.path.basename(orig)
+    copias = [p for p in glob.glob(os.path.join(M, "**", glob.escape(nombre)), recursive=True)]
+    eqp = os.path.join(D, "decisiones", "equivalencias.tsv")
+    eq = open(eqp, encoding="utf-8").read() if os.path.exists(eqp) else ""
+    apartadas = glob.glob(os.path.join(D, "respaldos", "quitadas-*", "**", glob.escape(nombre)), recursive=True)
+    check(copias == [orig] and all(s in eq for s in sids9) and len(apartadas) == 2,
+          "doble: una sola copia en la biblioteca, las dos apartadas en respaldos y sus spotify_id en equivalencias.tsv")
+# ---------- escenario 10 (2 oct): unir dos ediciones del MISMO disco (una canción repetida, una nueva) ----------
+if ok:
+    UN = "Banco Unir"
+    def pista(disco, nombre, n, origen, isrc, sid):
+        p = os.path.join(M, UN, disco, nombre); os.makedirs(os.path.dirname(p), exist_ok=True); shutil.copy2(os.path.join(REAL, origen), p)
+        t = FLAC(p); t.clear()
+        t.update(title=[nombre.split(" - ", 1)[1][:-5]], artist=[UN], albumartist=[UN], album=[disco.split(" - ", 1)[1]], date=[disco[:4]], tracknumber=[str(n)],
+                 isrc=[isrc], spotify_id=[sid]); t.save()
+        return p
+    dest, delx = f"{UN}/2020 - Edicion", f"{UN}/2021 - Edicion (Deluxe)"
+    for n in (1, 2, 3):
+        pista("2020 - Edicion", f"0{n} - Pista {n}.flac", n, LIB[1 + n], f"BANCOUNIR00{n}", f"unir-edicion-{n}")
+    d2 = pista("2021 - Edicion (Deluxe)", "01 - Pista 2.flac", 1, LIB[3], "BANCOUNIR002", "unir-deluxe-2")   # la misma grabación
+    d4 = pista("2021 - Edicion (Deluxe)", "02 - Pista 4.flac", 2, LIB[0], "BANCOUNIR004", "unir-deluxe-4")   # nueva
+    st = json.load(open(os.path.join(M, ".antra_state.json")))
+    st.update({"TRACK:spotify:unir-deluxe-2": d2, "TRACK:spotify:unir-deluxe-4": d4})
+    open(os.path.join(M, ".antra_state.json"), "w").write(json.dumps(st, indent=2, ensure_ascii=True))
+    open(os.path.join(M, "_Playlists", "Unir.m3u"), "w").write(f"#EXTM3U\n../{os.path.relpath(d2, M)}\n../{os.path.relpath(d4, M)}\n")
+    pend_antes = len(glob.glob(os.path.join(D, "logs", "nd-pendientes", "*.json")))
+    def unir(n, *args):
+        r = subprocess.run(["python3", os.path.join(HERE, "unir_discos.py"), *args, "--execute"], env=env, cwd=HERE, capture_output=True, text=True)
+        open(os.path.join(T, f"salida-unir-{n}.txt"), "w").write(r.stdout + r.stderr)
+        return r
+    r0 = unir(0, dest, dest)
+    check(r0.returncode != 0 and os.path.isdir(os.path.join(M, dest)) and len(os.listdir(os.path.join(M, dest))) == 3,
+          "unir: el destino como «otra» se rechaza sin tocar nada")
+    r1 = unir(1, dest, delx)
+    quedan = sorted(os.listdir(os.path.join(M, dest))) if os.path.isdir(os.path.join(M, dest)) else []
+    nueva = [f for f in quedan if re.match(r"^9\d\d - Pista 4\.flac$", f)]
+    check(r1.returncode == 0 and not os.path.exists(os.path.join(M, delx)) and quedan[:3] == ["01 - Pista 1.flac", "02 - Pista 2.flac", "03 - Pista 3.flac"]
+          and len(quedan) == 4 and nueva, f"unir: la Deluxe desapareció; el destino tiene sus 3 y la nueva provisional ({', '.join(quedan)})")
+    check(glob.glob(os.path.join(D, "respaldos", "**", "01 - Pista 2.flac"), recursive=True) != [], "unir: la repetida (misma grabación) fue a respaldos")
+    st = json.load(open(os.path.join(M, ".antra_state.json")))
+    f4 = os.path.join(M, dest, nueva[0]) if nueva else ""
+    pl = open(os.path.join(M, "_Playlists", "Unir.m3u"), encoding="utf-8").read().splitlines()
+    check(st.get("TRACK:spotify:unir-deluxe-2") == os.path.join(M, dest, "02 - Pista 2.flac") and st.get("TRACK:spotify:unir-deluxe-4") == f4
+          and pl[1:] == [f"../{dest}/02 - Pista 2.flac", f"../{os.path.relpath(f4, M)}"] and len(glob.glob(os.path.join(D, "logs", "nd-pendientes", "*.json"))) > pend_antes,
+          "unir: state de Antra, playlist y log pendiente para Navidrome apuntan al destino")
+    check(bool(f4) and FLAC(f4)["album"] == ["Edicion"] and FLAC(f4)["date"] == ["2020"], "unir: la nueva toma el nombre del disco y el año del destino")
+    r2 = unir(2, dest, delx)
+    check(r2.returncode != 0 and sorted(os.listdir(os.path.join(M, dest))) == quedan, "unir: la 2ª corrida (la Deluxe ya no existe) no toca nada")
+# ---------- escenario 11 (2 oct): un corte a mitad de numeros_pista: la siguiente corrida termina lo que quedó ----------
+if ok:
+    CO = "Banco Corte/2020 - Corte"
+    carp = os.path.join(M, CO); os.makedirs(carp)
+    rutas11 = {}
+    for n, nombre, origen in ((1, "02 - Pista 1.flac", LIB[2]), (2, "01 - Pista 2.flac", LIB[3])):   # al revés
+        p = os.path.join(carp, nombre); shutil.copy2(os.path.join(REAL, origen), p)
+        t = FLAC(p); t.clear()
+        t.update(title=[f"Pista {n}"], artist=["Banco Corte"], albumartist=["Banco Corte"], album=["Corte"], date=["2020"],
+                 tracknumber=[nombre[:2].lstrip("0")], isrc=[f"BANCOCORTE0{n}"], spotify_id=[f"corte-{n}"]); t.save()
+        rutas11[n] = p
+    st = json.load(open(os.path.join(M, ".antra_state.json")))
+    st.update({f"TRACK:spotify:corte-{n}": p for n, p in rutas11.items()})
+    open(os.path.join(M, ".antra_state.json"), "w").write(json.dumps(st, indent=2, ensure_ascii=True))
+    AID = 990000001   # un disco de Deezer de mentira, solo en la caché del banco
+    sembrar("deezer-numeros.json", {f"https://api.deezer.com/album/{AID}": {"id": AID, "title": "Corte", "release_date": "2020-01-01", "nb_tracks": 2},
+            f"https://api.deezer.com/album/{AID}/tracks?limit=300": {"data": [
+                {"track_position": n, "disk_number": 1, "isrc": f"BANCOCORTE0{n}", "title": f"Pista {n}", "duration": round(abrir(p).info.length)}
+                for n, p in rutas11.items()]}})
+    corte = f"""import os, runpy, sys
+n = [0]; rr = os.rename
+def r3(a, b):
+    n[0] += 1
+    if n[0] == 3: raise KeyboardInterrupt   # entre «viejo → temporal» y «temporal → final»
+    rr(a, b)
+os.rename = r3
+sys.argv = ["numeros_pista.py", "--a-mano", {CO!r}, "--deezer", "{AID}", "--execute"]
+runpy.run_path(os.path.join({HERE!r}, "numeros_pista.py"), run_name="__main__")
+"""
+    r1 = subprocess.run(["python3", "-c", corte], env=env, cwd=HERE, capture_output=True, text=True)
+    open(os.path.join(T, "salida-corte-1.txt"), "w").write(r1.stdout + r1.stderr)
+    en_curso = os.path.join(D, "logs", "tracknums-en-curso.json")
+    check(r1.returncode != 0 and any(f.startswith(".tn-tmp") for f in os.listdir(carp)) and os.path.exists(en_curso),
+          "corte: numeros_pista se cortó entre los dos pasos: quedan .tn-tmp-N y tracknums-en-curso.json")
+    r2 = subprocess.run(["python3", os.path.join(HERE, "numeros_pista.py"), "--a-mano", CO, "--deezer", str(AID), "--execute"], env=env, cwd=HERE,
+                        capture_output=True, text=True)
+    open(os.path.join(T, "salida-corte-2.txt"), "w").write(r2.stdout + r2.stderr)
+    st = json.load(open(os.path.join(M, ".antra_state.json")))
+    check(r2.returncode == 0 and sorted(os.listdir(carp)) == ["01 - Pista 1.flac", "02 - Pista 2.flac"] and not os.path.exists(en_curso)
+          and st.get("TRACK:spotify:corte-1") == os.path.join(carp, "01 - Pista 1.flac") and all(os.path.exists(v) for v in st.values()),
+          "corte: la siguiente corrida termina el renombrado y el state de Antra queda sano")
+# ---------- escenario 12 (2 oct): el embudo reemplaza un MP3 por su FLAC por ISRC solo si dura lo mismo ----------
+if ok:
+    import sqlite3
+    PR, ND = os.path.join(M, "_Prueba"), os.path.join(T, "navidrome", "data"); os.makedirs(ND)
+    hum = os.path.join(PR, HUMANZ); os.makedirs(hum)
+    igual = os.path.join(hum, "03 - Interlude_ Penthouse.mp3")     # mismo ISRC y misma duración que su FLAC → se reemplaza
+    corta = os.path.join(hum, "04 - Interlude_ The Elephant.mp3")  # mismo ISRC pero 10 s menos (otra edición) → NO
+    a_formato(os.path.join(M, LIB[3]), igual, ["-c:a", "libmp3lame", "-b:a", "128k"])
+    a_formato(os.path.join(M, LIB[4]), corta, ["-t", f"{abrir(os.path.join(M, LIB[4])).info.length - 10:.2f}", "-c:a", "libmp3lame", "-b:a", "128k"])
+    hace3 = time.strftime("%Y-%m-%dT%H:%M:%S.0000000Z", time.gmtime(time.time() - 3 * 86400))
+    json.dump({f"deezer:{i}": {"LocalPath": p.replace(PR, "/app/downloads", 1), "ExternalId": str(i), "ExternalProvider": "deezer", "DownloadedAt": hace3}
+               for i, p in enumerate((igual, corta), 1)}, open(os.path.join(PR, ".mappings.json"), "w"), indent=1)
+    con = sqlite3.connect(os.path.join(ND, "navidrome.db"))
+    con.executescript("""create table media_file(id text primary key, path text, missing int default 0, created_at text, artist text, tags text, album_id text);
+        create table scrobbles(media_file_id text, submission_time real);
+        create table annotation(item_type text, item_id text, user_id text, play_count int, play_date text, starred int, starred_at text, rating int);""")
+    for i, p in enumerate((igual, corta), 1):
+        con.execute("insert into media_file values (?,?,0,?,?,?,?)", (f"mp3-{i}", os.path.relpath(p, M), hace3[:19], "Gorillaz", json.dumps({"genre": [{"value": "Prueba"}]}), "alb"))
+    con.commit(); con.close()
+    r = subprocess.run(["python3", os.path.join(HERE, "prueba.py"), "revisar", "--execute"], env=env, cwd=HERE, capture_output=True, text=True)
+    open(os.path.join(T, "salida-embudo.txt"), "w").write(r.stdout + r.stderr)
+    resp = glob.glob(os.path.join(D, "respaldos", "prueba-*", "**", "03 - Interlude_ Penthouse.mp3"), recursive=True)
+    check(r.returncode == 0 and not os.path.exists(igual) and resp, "embudo: el MP3 con el ISRC y la duración de su FLAC se reemplaza (va a respaldos, no se borra)")
+    check(os.path.exists(corta) and "mismo ISRC pero otra duración" in r.stdout, "embudo: el MP3 con el mismo ISRC pero otra duración NO se reemplaza, y se dice")
+    logs12 = [json.load(open(f)) for f in glob.glob(os.path.join(D, "logs", "nd-pendientes", "*-prueba.json"))]
+    check(any(c["old_path"] == igual and c["new_path"] == os.path.join(M, LIB[3]) for lg in logs12 for c in lg["cambios"]),
+          "embudo: el log pendiente pasa las escuchas del MP3 a su FLAC")
 check(huella() == antes, "la biblioteca real y sus listas/planes NO se tocaron")
 print("\nRESULTADO:", "✅ TODO BIEN" if ok else "❌ HAY PROBLEMAS", f"(salidas en {T}/salida-*.txt)")
 sys.exit(0 if ok else 1)

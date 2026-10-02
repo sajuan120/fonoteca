@@ -205,9 +205,11 @@ pasa. Solo escucha en `127.0.0.1`, con un token por sesión.
 
 ## 6. Probar cambios
 
-- `banco_pruebas.py`: corre el procesado completo sobre una biblioteca de mentira (copias de canciones reales de tu
-  biblioteca: la lista está al principio del archivo y hay que adaptarla a tus discos) y comprueba cada paso. No toca la
-  biblioteca real ni Navidrome.
+- `banco_pruebas.py`: corre el procesado completo sobre una biblioteca de mentira y comprueba cada paso (12 escenarios).
+  Con la biblioteca real a mano usa copias de sus canciones (la lista está al principio del archivo y hay que adaptarla a
+  tus discos); sin ella, o con `--sintetico`, fabrica las canciones (tonos de ffmpeg con etiquetas y carátula) y siembra
+  las respuestas de Deezer en una caché propia, así corre en cualquier máquina sin red (lo que exige red se salta y se
+  dice). No toca la biblioteca real, ni su caché, ni Navidrome.
 - `ruff check --select F,E9 fonoteca/*.py`: imports y variables sin usar, claves repetidas, nombres sin definir.
 - Toda herramienta se puede probar aislada: con `MUSIC_ROOT` y `MUSIC_DATOS` apuntando a carpetas temporales, nada toca
   la biblioteca real, y `nd_actualizar.py` se niega a tocar Navidrome.
