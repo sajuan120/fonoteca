@@ -12,9 +12,9 @@ Sin --execute solo muestra qué haría. Con --execute:
   4. lo anota en revisar_fallidas.tsv (la lista única de "conseguir a mano"), con las playlists donde estaba.
 Log: logs/borradas-<fecha>/log.json
 """
-import json, os, shutil, sys, time
+import os, shutil, sys, time
 from audio import abrir
-from comun import ROOT, LOGS, antra_abierto, anotar_fallida, state_leer, state_guardar
+from comun import ROOT, LOGS, antra_abierto, anotar_fallida, state_leer, state_guardar, guardar_json
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -50,24 +50,26 @@ if not EXECUTE:
 stamp = time.strftime("%Y%m%d-%H%M%S")
 ldir = os.path.join(LOGS, f"borradas-{stamp}")
 os.makedirs(ldir)
+LOGJ = os.path.join(ldir, "log.json")
 
-# 1. borrar (leyendo antes los tags para poder anotarla)
+# 2 oct: ANTES se borraba primero y se anotaba al final: un error en medio dejaba el audio borrado sin rastro (ni en el
+# log, ni fuera del state, ni en pendientes). Ahora: 0. log de intención · 1. state · 2. playlists · 3. pendientes ·
+# 4. borrar (al final) · 5. log terminado. Si algo se corta, lo peor es un archivo que sigue existiendo.
 tags, log = {}, []
 for ino, ps in by_ino.items():
     t = abrir(ps[0])
     tags[ino] = {k: (t.get(k) or [""])[0] for k in ("artist", "title", "album", "spotify_id")}
     for p in ps:
-        os.unlink(p)
         log.append({"old": p, "ino": ino, "spotify_id": tags[ino]["spotify_id"]})   # devolver_playlists.py la busca por él
-        d = os.path.dirname(p)
-        while d != ROOT and not os.listdir(d):
-            os.rmdir(d); d = os.path.dirname(d)
+registro = {"motivo": motivo, "estado": "en curso", "borrados": log, "state_quitado": {}, "playlists": {}}
+guardar_json(LOGJ, registro, indent=1)
 
-# 2. state (mismo formato que exige repartir.py)
+# 1. state (mismo formato que exige repartir.py)
 removed = {k: state.pop(k) for k in drop}
 state_guardar(state)   # con respaldo en respaldos/
+registro["state_quitado"] = removed; guardar_json(LOGJ, registro, indent=1)
 
-# 3. playlists
+# 2. playlists
 pl_dir = os.path.join(ROOT, "_Playlists")
 en_playlists = {}
 for m in sorted(os.listdir(pl_dir)) if os.path.isdir(pl_dir) else []:
@@ -86,13 +88,27 @@ for m in sorted(os.listdir(pl_dir)) if os.path.isdir(pl_dir) else []:
     if len(keep) != len(lines):
         shutil.copy2(mp, os.path.join(ldir, m))
         open(mp, "w", encoding="utf-8").writelines(keep)
+registro["playlists"] = en_playlists; guardar_json(LOGJ, registro, indent=1)
 
-# 4. anotar en la lista única
+# 3. anotar en la lista única
 for ino, g in tags.items():
     pls = sorted({p for x in log if x["ino"] == ino for p in en_playlists.get(x["old"], [])})
     origen = f"Borrada {time.strftime('%Y-%m-%d')}: {motivo}" + (f" (estaba en playlist {', '.join(pls)})" if pls else "")
     anotar_fallida(origen, g["artist"], g["title"], g["album"], f"spotify:track:{g['spotify_id']}" if g["spotify_id"] else "")
 
-json.dump({"motivo": motivo, "borrados": log, "state_quitado": removed, "playlists": en_playlists},
-          open(os.path.join(ldir, "log.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+# 4. borrar (al final; el log ya lo sabe todo)
+hechos = []
+try:
+    for x in log:
+        p = x["old"]
+        os.unlink(p); hechos.append(p)
+        d = os.path.dirname(p)
+        while d != ROOT and not os.listdir(d):
+            os.rmdir(d); d = os.path.dirname(d)
+    registro["estado"] = "hecho"
+finally:
+    registro["borrados_hechos"] = hechos
+    if registro["estado"] != "hecho":
+        registro["estado"] = f"A MEDIAS: {len(hechos)} de {len(log)} borrados; los demás siguen en la biblioteca"
+    guardar_json(LOGJ, registro, indent=1)
 print(f"Borrados y anotados en revisar_fallidas.tsv. Log: {ldir}")

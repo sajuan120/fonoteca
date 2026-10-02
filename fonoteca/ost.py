@@ -20,7 +20,7 @@ Después (con --seguir se hace solo): replaygain.py <carpetas> --forzar --execut
 """
 import datetime, glob, json, os, re, subprocess, sys
 from audio import abrir, es_audio
-from comun import HERE, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, decision
+from comun import HERE, ROOT, RESPALDOS, LOGS, antra_abierto, cambiar_rutas, decision, state_leer, guardar_json
 
 EXECUTE, SEGUIR = "--execute" in sys.argv, "--seguir" in sys.argv
 if any(a in ("-h", "--help") for a in sys.argv[1:]):
@@ -36,6 +36,34 @@ if not os.path.exists(MAPA_P):
 MAPA = json.load(open(MAPA_P, encoding="utf-8"))
 num = lambda v: int(re.match(r"\d+", (v or ["0"])[0]).group()) if re.match(r"\d+", (v or ["0"])[0]) else 0
 ST = os.path.join(ROOT, AA)
+EN_CURSO = os.path.join(LOGS, "ost-en-curso.json")   # 2 oct: los renombres pendientes, por si se corta a mitad
+
+
+def recuperar():
+    """Un agrupado cortado entre los dos pasos del renombrado dejaba archivos .ost-tmp-N que nadie veía (2 oct): si quedó
+    ost-en-curso.json se terminan esos renombres y se anotan; un .ost-tmp-N sin registro recibe el nombre de sus etiquetas."""
+    if os.path.exists(EN_CURSO):
+        ec = json.load(open(EN_CURSO, encoding="utf-8"))
+        print(f"⚠️ Quedó un agrupado a medias ({ec.get('fecha', '?')}): termino los renombres.")
+        mover = {}
+        for viejo, tp, n in ec["tmp"]:
+            if os.path.exists(tp) and not os.path.exists(n):
+                os.makedirs(os.path.dirname(n), exist_ok=True); os.rename(tp, n)
+            if os.path.exists(n) and not os.path.exists(viejo): mover[viejo] = n
+        if mover: cambiar_rutas(mover, "ost-recuperado")
+        os.remove(EN_CURSO); print(f"   terminado: {len(mover)} canciones.")
+    for tp in [os.path.join(d, f) for d, _, fs in os.walk(ROOT) for f in fs if re.match(r"^\.ost-tmp-\d+\.", f)]:
+        try:
+            t = abrir(tp); g = lambda k: (t.get(k) or [""])[0]
+            n = os.path.join(os.path.dirname(tp), f"{num(t.get('tracknumber')):02d} - {(g('title') or 'sin titulo').translate(BAD)}{os.path.splitext(tp)[1]}")
+            if os.path.exists(n): print(f"   ⚠️ {tp}: no lo renombro, ya existe {n}"); continue
+            os.rename(tp, n); cambiar_rutas({tp: n}, "ost-recuperado")
+            print(f"   ⚠️ archivo escondido recuperado: {os.path.relpath(n, ROOT)} (su ruta anterior no se conoce)")
+        except Exception as e:
+            print(f"   ⚠️ no pude recuperar {tp}: {e}")
+
+
+recuperar()
 
 
 def existente(obra):
@@ -90,9 +118,17 @@ if errores: sys.exit("\n".join(errores))
 if not EXECUTE: sys.exit("Simulación: no se tocó nada. Usa --execute (y --seguir para ReplayGain, géneros y Navidrome).")
 if antra_abierto(): sys.exit("Antra está abierto: ciérralo y reintenta.")
 
+state_leer()   # 2 oct: falla ANTES de tocar nada si el state de Antra no tiene su formato
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-mover, antes, finales = {}, {}, []
-for p in plan:
+mover, finales = {}, []
+# 2 oct: respaldo de etiquetas y plan de renombres ANTES de tocar nada (antes iban al final: un corte los perdía)
+antes = {x["p"]: list(abrir(x["p"]).tags) for p in plan for x in p["canc"]}
+guardar_json(os.path.join(RESPALDOS, f"tags-antes-ost-{stamp}.json"), antes)
+renombres = [(x["p"], os.path.join(os.path.dirname(x["p"]), f".ost-tmp-{x['i']}{os.path.splitext(x['p'])[1]}"), x["n"])
+             for p in plan for x in p["canc"] if x["n"] != x["p"]]
+guardar_json(EN_CURSO, {"fecha": datetime.datetime.now().isoformat(timespec="seconds"), "tmp": renombres}, indent=1)
+try:
+  for p in plan:
     if p["portada"]:
         pd = os.path.join(ROOT, p["portada"])
         pic = next((abrir(os.path.join(pd, f)).pictures[0] for f in sorted(os.listdir(pd))
@@ -101,7 +137,7 @@ for p in plan:
         pic = next((abrir(x["p"]).pictures[0] for x in p["canc"] if x["vieja"] and abrir(x["p"]).pictures), None)
     tmp = []
     for x in p["canc"]:
-        t = abrir(x["p"]); antes[x["p"]] = list(t.tags)
+        t = abrir(x["p"])
         if not x["vieja"] and not t.get("originaldate") and t.get("date"): t["originaldate"] = t["date"]
         t["album"] = [p["album"]]; t["albumartist"] = [AA]; t["date"] = [p["fecha"]]; t["year"] = [p["fecha"][:4]]
         t["tracknumber"] = [str(x["i"])]; t["discnumber"] = ["1"]
@@ -118,7 +154,13 @@ for p in plan:
     for d in {os.path.dirname(x["p"]) for x in p["canc"]}:
         while d != ROOT and os.path.isdir(d) and not os.listdir(d):
             os.rmdir(d); d = os.path.dirname(d)
-json.dump(antes, open(os.path.join(RESPALDOS, f"tags-antes-ost-{stamp}.json"), "w", encoding="utf-8"), ensure_ascii=False)
+except BaseException as e:   # 2 oct: también Ctrl+C / DETENER: lo ya movido queda anotado; los .ost-tmp-N los termina recuperar()
+    hecho = {v: n for v, _, n in renombres if os.path.exists(n) and not os.path.exists(v)}
+    if hecho: cambiar_rutas(hecho, "ost")
+    print(f"\n⚠️ Se cortó ({e!r}): {len(hecho)} canciones ya en su sitio quedaron anotadas; lo que quedó con nombre .ost-tmp-N se "
+          "termina solo en la próxima corrida de ost.py.")
+    raise
+os.remove(EN_CURSO)
 log = cambiar_rutas(mover, "ost")
 print(f"HECHO: {len(mover)} canciones en {len(plan)} disco(s) «Soundtrack X». Log: {log}")
 if not SEGUIR:

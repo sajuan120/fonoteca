@@ -23,7 +23,7 @@ Lo quitado va a respaldos/quitadas-<hora>/ (no se borra: se borra a mano una vez
 """
 import datetime, os, shutil, sys
 from audio import abrir
-from comun import ROOT, RESPALDOS, antra_abierto, cambiar_rutas
+from comun import ROOT, RESPALDOS, antra_abierto, cambiar_rutas, state_leer
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -59,10 +59,12 @@ if not EXECUTE:
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo y reintenta.")
 
+state_leer()   # 2 oct: falla ANTES de mover nada si el state de Antra no tiene su formato (antes, después de mover y sin log)
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 resp = os.path.join(RESPALDOS, f"quitadas-{stamp}")
 mover, equiv = {}, []
-for s, q in pares:
+try:
+  for s, q in pares:
     ts = abrir(s)
     if q:
         tq = abrir(q)
@@ -78,5 +80,6 @@ for s, q in pares:
     d = os.path.dirname(s)
     while d != ROOT and os.path.isdir(d) and not os.listdir(d):   # carpetas que quedaron vacías
         os.rmdir(d); d = os.path.dirname(d)
-log = cambiar_rutas(mover, "quitadas", equivalencias=equiv)
+finally:   # 2 oct: también si se corta a mitad: lo ya movido queda anotado (state, playlists, listas, Navidrome)
+    log = cambiar_rutas(mover, "quitadas", equivalencias=equiv) if mover else None
 print(f"HECHO: {len(pares)} canción(es) a {resp}. Log pendiente para Navidrome: {log}\nSiguiente (pasa sus escuchas a la que queda): python3 nd_actualizar.py")

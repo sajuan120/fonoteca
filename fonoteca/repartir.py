@@ -22,7 +22,7 @@ import re
 
 from audio import abrir, es_audio
 
-from comun import ROOT, antra_abierto, RESPALDOS, SKIP
+from comun import ROOT, antra_abierto, RESPALDOS, SKIP, guardar_json
 import sys, shutil, time
 ARGS = sys.argv[1:]
 EXECUTE = "--execute" in ARGS
@@ -276,9 +276,10 @@ log = {"renames": [], "links": [], "drops": [], "state_backup": None, "m3u_borra
 
 
 def save_log(extra=None):
+    """2 oct: se escribe tras CADA operación (archivo temporal): un corte en medio deja el log de lo hecho hasta ahí."""
     if extra:
         log.update(extra)
-    json.dump(log, open(LOG, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    guardar_json(LOG, log, indent=1)
 
 
 try:
@@ -291,7 +292,7 @@ try:
     # 1. renombrar carpetas
     for a, b in plan["dir_rename"].items():
         os.rename(P(a), P(b))
-        log["renames"].append([a, b])
+        log["renames"].append([a, b]); save_log()
     print(f"Carpetas renombradas: {len(log['renames'])}")
 
     # 2. hardlinks
@@ -303,7 +304,7 @@ try:
         st = os.stat(dst)
         if st.st_ino != o["ino"] or st.st_nlink != nl + 1:
             raise RuntimeError(f"verificación falló tras enlazar {o['dst']}")
-        log["links"].append([o["src"], o["dst"]])
+        log["links"].append([o["src"], o["dst"]]); save_log()
         if n % 300 == 0:
             print(f"  hardlinks {n}/{len(plan['links'])}")
     print(f"Hardlinks creados: {len(log['links'])}")
@@ -316,7 +317,7 @@ try:
         os.unlink(src)
         if os.stat(dst).st_ino != o["ino"] or os.stat(dst).st_nlink < 1:
             raise RuntimeError(f"algo raro tras quitar {o['src']}")
-        log["drops"].append([o["src"], o["dst"]])
+        log["drops"].append([o["src"], o["dst"]]); save_log()
     print(f"Nombres quitados: {len(log['drops'])}")
 
     # 4. carpetas vacías y m3u
@@ -351,9 +352,18 @@ try:
     from comun import cambiar_rutas
     cambiar_rutas(smap, "reorg")   # 2 oct: deja el log pendiente para nd_actualizar.py
     save_log()
-except Exception as e:
-    save_log({"error": repr(e)})
-    print(f"\nFALLO: {e}\nEl log parcial está en {LOG}. No se borró nada sin verificar.")
+except BaseException as e:   # 2 oct: también Ctrl+C / DETENER (KeyboardInterrupt no es Exception: antes no dejaba log)
+    # lo que ya se movió (hardlinks hechos, nombres quitados) va igual a Navidrome y al state: el log pendiente se deja
+    # con lo hecho hasta aquí, y el state apunta a los nombres nuevos de lo que ya perdió el viejo
+    hecho = {k: v for k, v in plan["state_map"].items() if not os.path.exists(k) and os.path.exists(v)}   # viejo ya no está, nuevo sí
+    try:
+        if hecho:
+            from comun import cambiar_rutas
+            cambiar_rutas(hecho, "reorg-a-medias")
+        save_log({"error": repr(e), "a_medias": True})
+    finally:
+        print(f"\nFALLO ({e!r}): quedó a medias. Lo hecho está en {LOG} y en logs/nd-pendientes/; vuelve a correr el "
+              "procesado (los chequeos de inodo saltan lo ya hecho).")
     sys.exit(1)
 
 # verificación final del state

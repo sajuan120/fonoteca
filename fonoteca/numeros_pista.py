@@ -28,9 +28,9 @@ Con --execute: TRACKNUMBER/DISCNUMBER (y los totales de pistas/discos si el arch
 carpeta (mismo inodo: los hardlinks siguen); actualiza .antra_state.json (respaldo en respaldos/) y _Playlists/*.m3u.
 Log para revertir y para que Navidrome pase las reproducciones al nombre nuevo (nd_actualizar.py).
 """
-import collections, json, os, re, sys, urllib.error, urllib.parse, urllib.request
+import collections, datetime, json, os, re, sys, urllib.parse
 from audio import abrir, es_audio
-from comun import ROOT, SKIP, cache_path, plan_path, log_path, antra_abierto, clave_titulo, cambiar_rutas, plano
+from comun import ROOT, SKIP, LOGS, cache_path, plan_path, log_path, antra_abierto, clave_titulo, cambiar_rutas, plano, guardar_json
 from red import Cache, pedir_json
 
 STATE = os.path.join(ROOT, ".antra_state.json")
@@ -170,6 +170,55 @@ def problema_visible(info):
             return "el nombre de algún archivo no cuadra con sus etiquetas"
     return ""
 
+EN_CURSO = os.path.join(LOGS, "tracknums-en-curso.json")   # 2 oct: el plan de renombrado ANTES de tocar nada
+
+def terminar(cambios, hasta_el_final=True):
+    """Aplica (o termina) un renombrado: etiquetas, nombre temporal .tn-tmp-N y nombre final, en dos pasos; se puede
+    volver a llamar con lo mismo tras un corte (lo ya hecho se salta). Al final: state, playlists y log para Navidrome."""
+    for c in cambios:
+        old, new, tp = c["old_path"], c["new_path"], c["tmp"]
+        if os.path.exists(old) and (old == new or not os.path.exists(new)):   # todavía con su nombre viejo: etiquetas
+            t = abrir(old)
+            for k, v in c["tags"].items():
+                if v is not None: t[k] = [str(v)]
+            t.save()
+            if old != new:
+                os.rename(old, tp)
+    for c in cambios:
+        if c["old_path"] != c["new_path"] and os.path.exists(c["tmp"]):
+            assert not os.path.exists(c["new_path"]), c["new_path"]
+            os.rename(c["tmp"], c["new_path"])
+    pmap = {c["old_path"]: c["new_path"] for c in cambios if c["old_path"] != c["new_path"]}
+    rewrite_paths(pmap)   # state, playlists, equivalencias y aceptados (con respaldo de lo que cambia) + log pendiente
+    out = log_path("tracknums-log")
+    guardar_json(out, {"cambios": [{k: c[k] for k in ("old_path", "new_path", "old_tags")} for c in cambios]}, indent=1)
+    if os.path.exists(EN_CURSO): os.remove(EN_CURSO)
+    return out, len(pmap)
+
+def recuperar():
+    """Un renombrado cortado a mitad (Ctrl+C, DETENER, error) dejaba archivos .tn-tmp-N que nadie veía (2 oct). Si quedó
+    tracknums-en-curso.json se termina tal cual; un .tn-tmp-N sin registro recibe el nombre que dicen sus etiquetas."""
+    if os.path.exists(EN_CURSO):
+        ec = json.load(open(EN_CURSO, encoding="utf-8"))
+        print(f"⚠️ Quedó un renombrado a medias ({len(ec['cambios'])} canciones, {ec.get('fecha', '?')}): lo termino.")
+        if antra_abierto(): sys.exit("Antra está abierto; ciérralo y reintenta.")
+        out, n = terminar(ec["cambios"])
+        print(f"   terminado: {n} renombradas. Log: {out}")
+    sueltos = [os.path.join(d, f) for d, _, fs in os.walk(ROOT) for f in fs if re.match(r"^\.tn-tmp-\d+\.", f)]
+    for tp in sueltos:
+        try:
+            t = abrir(tp); g = lambda k: (t.get(k) or [""])[0]
+            tn, dn = num(g("tracknumber")), num(g("discnumber")) or 1
+            bad = str.maketrans({c: "_" for c in '/\\:*?"<>|'})
+            nombre = (f"{dn}-" if dn > 1 else "") + f"{tn:02d} - {g('title').translate(bad).strip() or 'sin titulo'}{os.path.splitext(tp)[1]}"
+            n = os.path.join(os.path.dirname(tp), nombre)
+            if os.path.exists(n): print(f"   ⚠️ {tp}: no lo renombro, ya existe {nombre}"); continue
+            os.rename(tp, n)
+            cambiar_rutas({tp: n}, "tracknums-recuperado")
+            print(f"   ⚠️ archivo escondido recuperado: {os.path.relpath(n, ROOT)} (su ruta anterior no se conoce: Navidrome la verá como nueva)")
+        except Exception as e:
+            print(f"   ⚠️ no pude recuperar {tp}: {e}")
+
 def rewrite_paths(pmap):
     """pmap: ruta absoluta vieja -> nueva. State de Antra, playlists, equivalencias.tsv e ids-mb-aceptados.json, con
     respaldo (comun.cambiar_rutas; 30 sep: antes solo state y playlists → equivalencias.tsv quedaba con rutas rotas)."""
@@ -248,6 +297,8 @@ def num(v):
     m = re.match(r"\d+", v or "")
     return int(m.group()) if m else 0
 
+recuperar()   # 2 oct: antes de planear nada, terminar lo que haya quedado a medias
+
 for i, (d, fl) in enumerate(folders):
     info = []
     for f in fl:
@@ -314,26 +365,23 @@ print(f"plan OK: {len(plan)} canciones")
 if "--execute" not in sys.argv or not plan: sys.exit(0)
 if antra_abierto(): sys.exit("Antra está abierto; ciérralo y reintenta.")
 
-log = {"cambios": []}; pmap = {}
-# renombrar en dos pasos (a nombre temporal) para que los intercambios de número no choquen
-tmp = []
+# 2 oct: el plan entero (etiquetas, nombre temporal y nombre final de cada una) se escribe ANTES de tocar nada; un corte
+# en medio se termina en la próxima corrida (recuperar()). Antes el log se escribía al final y un Ctrl+C dejaba archivos
+# .tn-tmp-N escondidos, sin log y con el state apuntando a nombres que ya no existían.
+cambios = []
 for i, p in enumerate(plan):
     d = os.path.join(ROOT, p["dir"]); old = os.path.join(d, p["old"])
     t = abrir(old)
-    oldtags = {k: (t.get(k) or None) for k in TAGS}
-    t["tracknumber"] = [str(p["tn"])]; t["discnumber"] = [str(p["dn"])]
+    tags = {"tracknumber": str(p["tn"]), "discnumber": str(p["dn"])}
     for k, v in (("totaltracks", p["tot"]), ("tracktotal", p["tot"]), ("totaldiscs", p["discos"]), ("disctotal", p["discos"])):
-        if v and t.get(k): t[k] = [str(v)]
-    t.save()
-    if p["new"] != p["old"]:
-        tp = os.path.join(d, f".tn-tmp-{i}{os.path.splitext(old)[1]}"); os.rename(old, tp); tmp.append((tp, os.path.join(d, p["new"])))
-    log["cambios"].append(dict(old_path=old, new_path=os.path.join(d, p["new"]), old_tags=oldtags))
-for tp, new in tmp:
-    assert not os.path.exists(new), new
-    os.rename(tp, new)
-for c in log["cambios"]:
-    if c["old_path"] != c["new_path"]: pmap[c["old_path"]] = c["new_path"]
-rewrite_paths(pmap)   # state, playlists, equivalencias y aceptados (con respaldo de lo que cambia)
-out = log_path("tracknums-log")
-json.dump(log, open(out, "w"), ensure_ascii=False, indent=1)
-print(f"HECHO: {len(plan)} canciones, {len(pmap)} renombradas (rutas al día en state y listas). Log: {out}")
+        if v and t.get(k): tags[k] = str(v)
+    cambios.append(dict(old_path=old, new_path=os.path.join(d, p["new"]), tmp=os.path.join(d, f".tn-tmp-{i}{os.path.splitext(old)[1]}"),
+                        tags=tags, old_tags={k: (t.get(k) or None) for k in TAGS}))
+guardar_json(EN_CURSO, {"fecha": datetime.datetime.now().isoformat(timespec="seconds"), "cambios": cambios}, indent=1)
+try:
+    out, n = terminar(cambios)
+except BaseException as e:
+    print(f"\n⚠️ Se cortó ({e!r}): el renombrado quedó a medias y se termina solo en la próxima corrida "
+          f"(numeros_pista.py lee {EN_CURSO}).")
+    raise
+print(f"HECHO: {len(plan)} canciones, {n} renombradas (rutas al día en state y listas). Log: {out}")

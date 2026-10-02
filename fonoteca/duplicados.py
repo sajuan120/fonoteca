@@ -19,7 +19,7 @@ Con --execute:
 """
 import collections, datetime, glob, json, os, shutil, sys, zipfile
 from audio import abrir, es_audio, con_perdida
-from comun import ROOT, HERE, RESPALDOS, LOGS, LISTAS, antra_abierto, es_de_album, clave_titulo, cambiar_rutas, decision
+from comun import ROOT, HERE, RESPALDOS, LOGS, LISTAS, antra_abierto, es_de_album, clave_titulo, cambiar_rutas, decision, state_leer, guardar_json
 
 args = sys.argv[1:]
 EXECUTE = "--execute" in args
@@ -101,12 +101,23 @@ if not plan:
     sys.exit(0)
 
 # ---------- ejecutar ----------
+state_leer()   # 2 oct: falla ANTES de mover nada si el state de Antra no tiene su formato (antes fallaba después, sin log)
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 dest = os.path.join(RESPALDOS, f"duplicados-{stamp}")
 sobrantes = {s["path"] for p in plan for s in p["sobran"]}   # al unir discos NO se arrastran: se quitan en su turno
 mover = {}   # ruta vieja → ruta nueva (la copia que queda, o donde se movió al unir discos)
 DISCO = ("album", "albumartist", "date", "year", "musicbrainz_albumid", "musicbrainz_releasegroupid", "musicbrainz_albumartistid")
-for p in plan:
+log = os.path.join(LOGS, f"duplicados-{stamp}.json")
+guardar_json(log, {"plan": [{"isrc": p["isrc"], "queda": p["queda"]["path"], "sobran": [s["path"] for s in p["sobran"]]} for p in plan],
+                   "respaldo": dest, "estado": "en curso", "cambios": []}, indent=1)   # 2 oct: la intención, antes de mover
+def anotar(estado):
+    """State de Antra, playlists (sin repetir la que queda), equivalencias.tsv e ids-mb-aceptados.json → la ruta nueva, y el
+    log pendiente para Navidrome (comun.cambiar_rutas). Se llama también si algo se corta: lo movido queda anotado."""
+    if mover:
+        cambiar_rutas(mover, "duplicados")
+    guardar_json(log, {"cambios": [{"old_path": a, "new_path": b} for a, b in mover.items()], "respaldo": dest, "estado": estado}, indent=1)
+try:
+  for p in plan:
     q = p["queda"]
     for s in p["sobran"]:
         rel = os.path.relpath(s["path"], ROOT)
@@ -141,12 +152,11 @@ for p in plan:
         d = os.path.dirname(s["path"])
         while d != ROOT and os.path.isdir(d) and not os.listdir(d):
             os.rmdir(d); d = os.path.dirname(d)
-
-# state de Antra, playlists (sin repetir la que queda), equivalencias.tsv e ids-mb-aceptados.json → la ruta nueva
-# (30 sep: comun.cambiar_rutas; antes este script tenía su propia copia sin equivalencias ni aceptados)
-cambiar_rutas(mover, "duplicados")   # 2 oct: deja el log pendiente para nd_actualizar.py
-log = os.path.join(LOGS, f"duplicados-{stamp}.json")
-json.dump({"cambios": [{"old_path": a, "new_path": b} for a, b in mover.items()], "respaldo": dest},
-          open(log, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+except BaseException as e:   # 2 oct: también Ctrl+C / DETENER: lo ya movido queda en el state, las playlists y Navidrome
+    anotar(f"A MEDIAS ({e!r})")
+    print(f"\n⚠️ Se cortó ({e!r}): {len(mover)} rutas ya movidas quedaron anotadas (state, playlists, nd-pendientes). "
+          f"Vuelve a correr duplicados.py para el resto.")
+    raise
+anotar("hecho")
 print(f"\nHECHO: {len(mover)} rutas movidas (sobrantes → {dest}); state, playlists y listas al día.")
 print(f"Log para Navidrome (nd_actualizar.py): {log}")

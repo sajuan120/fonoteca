@@ -21,9 +21,9 @@ Regla (la de las ediciones del 27-28 sep):
 Después (con --seguir se hace solo, en este orden): numeros_pista.py --execute, mb_disco.py <carpetas> --execute,
 replaygain.py <carpetas> --forzar --execute y nd_actualizar.py (aplica los logs pendientes: escuchas a la ruta nueva).
 """
-import datetime, json, os, re, shutil, subprocess, sys
+import datetime, os, re, shutil, subprocess, sys
 from audio import abrir, es_audio
-from comun import HERE, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, clave_titulo, dura_distinto
+from comun import HERE, ROOT, RESPALDOS, antra_abierto, cambiar_rutas, clave_titulo, dura_distinto, state_leer, guardar_json
 
 args = sys.argv[1:]
 EXECUTE, SEGUIR = "--execute" in args, "--seguir" in args
@@ -109,14 +109,19 @@ if not EXECUTE:
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo y reintenta.")
 
+state_leer()   # 2 oct: falla ANTES de mover nada si el state de Antra no tiene su formato
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 resp = os.path.join(RESPALDOS, f"quitadas-{stamp}")
-mover, antes, equiv, finales = {}, {}, [], []
-for p in plan:
+mover, equiv, finales = {}, [], []
+# 2 oct: el respaldo de las etiquetas se escribe ANTES de cambiar ninguna (antes, al final: un corte lo perdía)
+antes = {x["f"]: list(x["t"].tags) for p in plan for x in p["ds"] + p["llegan"]}
+guardar_json(os.path.join(RESPALDOS, f"tags-antes-unir-{stamp}.json"), antes)
+try:
+  for p in plan:
     fin = p["final"]; os.makedirs(fin, exist_ok=True); finales.append(fin)
     k = 900 + max([int(m.group(1)) - 900 for f in os.listdir(p["dest"]) for m in [re.match(r"^(9\d\d) - ", f)] if m] or [0])
     for x in p["ds"]:   # las del destino: la fecha original y, si cambió el año, su carpeta
-        t = x["t"]; antes[x["f"]] = list(t.tags)
+        t = x["t"]
         t["date"] = [p["fecha"]]; t["year"] = [p["fecha"][:4]]   # sin YEAR Navidrome parte el disco
         t.save()
         n = os.path.join(fin, os.path.basename(x["f"]))
@@ -130,7 +135,7 @@ for p in plan:
             if sid: equiv.append((sid, destino_de[q], f"misma grabación que «{os.path.basename(x['f'])}» (unir_discos {stamp[:8]})"))
             shutil.move(x["f"], dst); mover[x["f"]] = destino_de[q]
             continue
-        t = x["t"]; antes[x["f"]] = list(t.tags)
+        t = x["t"]
         t["album"] = [p["album"]]; t["date"] = [p["fecha"]]; t["year"] = [p["fecha"][:4]]
         if p["org"]: t["organization"] = p["org"]
         for c in QUITAR: t.pop(c, None)
@@ -148,9 +153,8 @@ for p in plan:
         d = o if os.path.isdir(o) else os.path.dirname(o)
         while d != ROOT and os.path.isdir(d) and not os.listdir(d):
             os.rmdir(d); d = os.path.dirname(d)
-json.dump({f: v for f, v in antes.items()}, open(os.path.join(RESPALDOS, f"tags-antes-unir-{stamp}.json"), "w", encoding="utf-8"),
-          ensure_ascii=False)
-log = cambiar_rutas(mover, "unir-discos", equivalencias=equiv)
+finally:   # 2 oct: también si se corta a mitad: lo ya movido queda anotado (state, playlists, listas, Navidrome)
+    log = cambiar_rutas(mover, "unir-discos", equivalencias=equiv) if mover else None
 print(f"HECHO: {len(mover)} canciones movidas o unidas en {len(finales)} disco(s). Log: {log}")
 if not SEGUIR:
     print("Siguiente: numeros_pista.py --execute · mb_disco.py <carpetas> --execute · replaygain.py <carpetas> --forzar --execute"
