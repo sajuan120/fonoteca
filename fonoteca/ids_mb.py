@@ -197,7 +197,9 @@ def ver(rel, rec, en_acoustid=False):
 V = {}
 for rel in con_id:
     rec = GRAB.get(X[rel]["rid"])
-    V[rel] = (False, None, "el ID no existe en MusicBrainz") if not rec or rec.get("no_existe") else ver(rel, rec)
+    # 2 oct: SIN DATOS (sin red, --sin-red, MusicBrainz caído) ≠ «no existe» (solo con un 404): antes se quitaban sus IDs
+    V[rel] = ((None, None, "sin datos de MusicBrainz") if not rec else
+              (False, None, "el ID no existe en MusicBrainz") if rec.get("no_existe") else ver(rel, rec))
 choque = set()                                                  # comparten ID, las dos "cumplen" pero su audio es distinto
 por_id = collections.defaultdict(list)
 for rel in con_id: por_id[X[rel]["rid"]].append(rel)
@@ -213,7 +215,10 @@ for rid, rs in por_id.items():
         if misma: continue                                      # misma canción y duración: otra masterización, misma grabación
         s = parecido(huella(buenos[0]), huella(r))              # (la misma regla que la sección «IDs equivocados» de auditoria.py)
         if s is not None and s < 0.75: choque.add(r)
-malos = [r for r in con_id if not V[r][0]] + sorted(choque)
+sin_datos = sorted(r for r in con_id if V[r][0] is None)
+if sin_datos:
+    log(f"⚠️ {len(sin_datos)} sin datos de MusicBrainz: no se tocan (volver a correr con red): {sin_datos[:5]}")
+malos = [r for r in con_id if V[r][0] is False] + sorted(choque)
 log(f"no corresponden: {len(malos) - len(choque)}, más {len(choque)} que comparten ID con otra canción de audio distinto")
 
 # ---------------------------------------------------------------- 3. buscar la grabación verdadera
@@ -344,6 +349,8 @@ for n, rel in enumerate(malos, 1):
         acciones[rel] = ("dejar: el audio confirma el ID", None, actual.get("title"), "", "AcoustID", V[rel][2])
     elif rel not in choque and (V[rel][1] or 0) >= 2:
         acciones[rel] = ("dejar: misma canción, otra duración", None, actual.get("title"), "", "", V[rel][2])
+    elif not actual:   # sin la grabación leída de verdad no se quita nada
+        continue
     else:
         acciones[rel] = ("quitar", {k: None for k in MB_GRABACION + MB_DISCO + PICARD_DISCO}, actual.get("title"), "", "", V[rel][2])
 # ID viejo: MusicBrainz fusionó esa grabación con otra (misma grabación, ID nuevo) → el nuevo
@@ -395,7 +402,7 @@ with open(plan_path("ids-mb.tsv"), "w", encoding="utf-8") as o:
     for rel, (acc, new, tenia, queda, fuentes, mot) in sorted(acciones.items(), key=lambda kv: (kv[1][0], kv[0])):
         o.write(f"{acc}\t{rel}\t{tenia}\t{queda}\t{fuentes}\t{mot}\n")
 cuenta = collections.Counter(a[0] for a in acciones.values())
-log(f"\n{len(con_id) - len(malos)} ya estaban bien. " + " | ".join(f"{k}: {v}" for k, v in sorted(cuenta.items())))
+log(f"\n{len(con_id) - len(malos) - len(sin_datos)} ya estaban bien{f' ({len(sin_datos)} sin datos, sin tocar)' if sin_datos else ''}. " + " | ".join(f"{k}: {v}" for k, v in sorted(cuenta.items())))
 for rel, (acc, new, tenia, queda, fuentes, mot) in sorted(acciones.items()):
     if acc != "cambiar": log(f"  {acc:38} {rel}  (tenía: {tenia})")
 if sin_red: log(f"⚠️ {len(sin_red)} sin cambiar por falta de red (volver a correr): {sin_red[:5]}")

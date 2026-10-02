@@ -29,7 +29,7 @@ if not args or args[0].startswith("--"):
     sys.exit(__doc__)
 nombre = args[0]
 def opt(k): return args[args.index(k) + 1] if k in args else None
-SP = os.path.join(HERE, "usuarios", nombre)
+SP = os.path.join(__import__("comun").DATOS, "usuarios", nombre)   # 2 oct: DATOS (= HERE en uso normal; aparte en modo prueba)
 if opt("--zip"):
     os.makedirs(SP, exist_ok=True)
     zipfile.ZipFile(opt("--zip")).extractall(SP)

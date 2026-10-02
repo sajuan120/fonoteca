@@ -81,8 +81,8 @@ def _abrir(url, datos=None, cabeceras=None, timeout=30):
 
 def pedir_json(url, cache=None, datos=None, cabeceras=None, intentos=4, timeout=30):
     """El JSON de `url` (GET; POST si hay `datos`, en bytes). Devuelve:
-       el JSON · {} si no existe (404 u otro 4xx: se guarda en la caché) · None si no hubo respuesta (sin red, o el
-       servicio siguió ocupado tras los reintentos): NO se guarda, la próxima vez se vuelve a pedir."""
+       el JSON · {} si no existe (404/410: se guarda en la caché) · None si no hubo respuesta (sin red, el servicio
+       siguió ocupado, o lo rechazó con 400/401/403…): NO se guarda, la próxima vez se vuelve a pedir."""
     if cache is not None and url in cache:
         return cache[url]
     for intento in range(intentos):
@@ -92,11 +92,14 @@ def pedir_json(url, cache=None, datos=None, cabeceras=None, intentos=4, timeout=
         except urllib.error.HTTPError as e:
             if e.code == 429 or e.code >= 500:   # demasiadas consultas / servicio ocupado: esperar y reintentar
                 time.sleep(3 + 3 * intento); continue
-            d = {}                                 # 404 (no existe) u otro error de la consulta: no sirve reintentar
+            if e.code not in (404, 410):         # 2 oct: 400/401/403/408 (clave vencida, bloqueo…) NO es «no existe»
+                print(f"  ⚠️ {urllib.parse.urlsplit(url).hostname} respondió {e.code}: no se guarda", flush=True)
+                return None
+            d = {}                                 # 404/410: no existe de verdad (se guarda)
         except (OSError, ValueError):              # sin red, tiempo agotado, o una respuesta que no es JSON
             time.sleep(3 + 3 * intento); continue
-        if isinstance(d, dict) and (d.get("error") or {}).get("code") == 4:   # Deezer: «Quota limit exceeded»
-            time.sleep(5 * (intento + 1)); continue
+        if "api.deezer.com" in url and isinstance(d, dict) and (d.get("error") or {}).get("code") in (4, 700):
+            time.sleep(5 * (intento + 1)); continue   # Deezer: 4 «Quota limit exceeded», 700 «Service busy»
         if cache is not None:
             cache.poner(url, d)
         return d

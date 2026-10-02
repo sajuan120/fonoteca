@@ -57,7 +57,10 @@ for (rg, _), items in grupos.items():
     if len(actuales) < 2:
         continue
     release = collections.Counter(i["release"] for i in items).most_common(1)[0][0]
-    oficial = artista_oficial(release)
+    oficial = artista_oficial(release) if release else None
+    if release and oficial is None:   # 2 oct: sin respuesta de MusicBrainz no se unifica a ciegas al mayoritario
+        print(f"  (sin respuesta de MusicBrainz: «{items[0]['album']}» queda para la próxima)")
+        continue
     propuesta = NOMBRE.get(oficial or "", oficial) or actuales.most_common(1)[0][0]
     carpetas = {os.path.dirname(i["path"]) for i in items}
     en_disco = {i["path"] for i in items}

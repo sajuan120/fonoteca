@@ -32,7 +32,7 @@ OCTO = CONF.get("octo_fiesta", {}).get("url", "http://127.0.0.1:5274")
 ROBOT = CONF.get("octo_fiesta", {}).get("usuario_robot", "robot")   # usuario de Navidrome (no admin) que pide a Octo-Fiesta
 PRUEBA = os.path.join(ROOT, "_Prueba")
 MAPPINGS = os.path.join(PRUEBA, ".mappings.json")
-HISTORIAL = os.path.join(HERE, "descubrir-historial.json")
+HISTORIAL = os.path.join(__import__("comun").DATOS, "descubrir-historial.json")   # 2 oct: DATOS (= HERE en uso normal)
 
 
 def get_json(url, data=None, timeout=60):
@@ -84,31 +84,43 @@ def artistas_clave(art):
     return {clave_artista(a) for a in partir(art)} | {clave_artista(art)}
 
 
+class SinRespuesta(Exception):
+    """Deezer no respondió: no se sabe si la canción está (2 oct: antes contaba como «no está» y la quemaba)."""
+
+
 def deezer_de(rec):
     """ID de Deezer de la grabación: por ISRC (exacto); si no hay ISRC (28 sep: varias de Milo j, Rodrigo Amarante),
     por nombre — primero la búsqueda avanzada y si no la simple «artista título» (la avanzada se confunde con la «ñ»:
     «Milo j – Niño» devolvía «DJ Kay Slay»). Por nombre exige: mismo artista, título igual o que empieza igual (Deezer
-    agrega «(Narcos Theme)») y duración a ±3 s de la de MusicBrainz. None si no está."""
+    agrega «(Narcos Theme)») y duración a ±3 s de la de MusicBrainz. None si no está; SinRespuesta si Deezer no
+    contestó alguna de las consultas y no se encontró nada (no se puede saber si está)."""
+    sin_resp = False
     dur = (rec.get("length") or 0) / 1000
     for isrc in rec.get("isrcs") or []:
         try:
-            d = get_json(f"https://api.deezer.com/track/isrc:{isrc}", timeout=20) or {}
+            d = get_json(f"https://api.deezer.com/track/isrc:{isrc}", timeout=20)
         except Exception:
-            continue
+            d = None
+        if d is None:
+            sin_resp = True; continue
         if d.get("id") and d.get("readable", True) and (not dur or abs(d.get("duration", 0) - dur) <= 3):
             return str(d["id"])
     arts, tit = artistas_clave(rec["artista"]), clave_titulo(rec["titulo"])
     for q in (f'artist:"{rec["artista"]}" track:"{rec["titulo"]}"', f'{rec["artista"]} {rec["titulo"]}'):
         try:
-            r = get_json("https://api.deezer.com/search?limit=15&q=" + urllib.parse.quote(q), timeout=20) or {}
+            r = get_json("https://api.deezer.com/search?limit=15&q=" + urllib.parse.quote(q), timeout=20)
         except Exception:
-            continue
+            r = None
+        if r is None:
+            sin_resp = True; continue
         buenos = [x for x in r.get("data") or []
                   if x.get("readable", True) and clave_artista(x["artist"]["name"]) in arts
                   and (clave_titulo(x["title"]) == tit or clave_titulo(x["title"]).startswith(tit))
                   and (not dur or abs(x.get("duration", 0) - dur) <= 3)]
         if buenos:
             return str(min(buenos, key=lambda x: abs(x.get("duration", 0) - dur))["id"])
+    if sin_resp:
+        raise SinRespuesta()
     return None
 
 
@@ -205,7 +217,11 @@ def main():
         for rec in nuevas:
             if len(elegidas) >= n:
                 break
-            dz = deezer_de(rec)
+            try:
+                dz = deezer_de(rec)
+            except SinRespuesta:   # sin red o Deezer caído: se corta aquí y nada se quema (queda para la próxima)
+                print("  Deezer no responde: sigo la próxima semana con lo que falta.")
+                break
             (elegidas if dz else sin_deezer).append(dict(rec, deezer=dz))
             time.sleep(0.2)
         for e in elegidas:
@@ -218,12 +234,19 @@ def main():
         bajadas = []
         for e in elegidas:
             p = pedir_a_octo(e["deezer"], pw)
+            if not p:   # 2 oct: Octo-Fiesta no la bajó (ARL vencido, caído…): NO se anota, se reintenta otra semana
+                print(f"  ✗ NO se pudo bajar (se reintenta la próxima vez): {e['artista']} – {e['titulo']}")
+                continue
             h[e["mbid"]] = {"fecha": hoy, "artista": e["artista"], "titulo": e["titulo"], "deezer": e["deezer"],
                             "claves": [list(k) for k in claves(e["artista"], e["titulo"])],
                             "ruta": os.path.relpath(p, ROOT) if p else None}
-            if p:
-                bajadas.append(p)
-            print(f"  {'✓ bajada' if p else '✗ NO se pudo bajar'}: {e['artista']} – {e['titulo']}")
+            bajadas.append(p)
+            print(f"  ✓ bajada: {e['artista']} – {e['titulo']}")
+        if elegidas and not bajadas:
+            subprocess.run(["notify-send", "-a", "Música", "-i", "dialog-warning", "-t", "0",
+                            f"Descubrir: Octo-Fiesta no bajó ninguna de {len(elegidas)}",
+                            "¿El ARL de Deezer venció o Octo-Fiesta está caído? No se anotó nada: se reintenta la próxima vez."],
+                           check=False)
         for e in sin_deezer:   # tampoco se vuelven a intentar
             h[e["mbid"]] = {"fecha": hoy, "artista": e["artista"], "titulo": e["titulo"], "deezer": None,
                             "claves": [list(k) for k in claves(e["artista"], e["titulo"])], "ruta": None}

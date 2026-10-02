@@ -35,8 +35,17 @@ args = sys.argv[1:]
 if not args or args[0].startswith("--"):
     sys.exit(__doc__)
 EXECUTE = "--execute" in args
-folder = args[0]
-def opt(k): return args[args.index(k) + 1] if k in args else None
+# 2 oct: «Carpeta/» (la barra que pone el Tab) dejaba cada canción con dos nombres; una ruta absoluta o con «..» tampoco
+folder = os.path.normpath(args[0])
+if os.path.isabs(folder):
+    folder = os.path.relpath(folder, ROOT)
+if folder.startswith("..") or os.sep in folder or folder in (".", ""):
+    sys.exit(f"La carpeta tiene que ser una descarga de la raíz de la biblioteca (sin «/»): {args[0]}")
+def opt(k):
+    if k not in args: return None
+    i = args.index(k) + 1
+    if i >= len(args) or args[i].startswith("--"): sys.exit(f"Falta el valor de {k}.")
+    return args[i]
 zipf, user = opt("--historial"), opt("--usuario")
 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 X = ["--execute"] if EXECUTE else []
@@ -62,6 +71,8 @@ def tags(p):
 if antra_abierto():
     sys.exit("Antra está abierto: ciérralo primero.")
 assert os.path.isdir(os.path.join(ROOT, folder)), f"No existe {ROOT}/{folder}"
+if any(os.path.isdir(os.path.join(ROOT, folder, x)) for x in os.listdir(os.path.join(ROOT, folder)) if not x.startswith(".")):
+    sys.exit(f"«{folder}» tiene subcarpetas: parece un artista, no una descarga. Mueve las canciones nuevas a otra carpeta.")
 if zipf:
     assert user and os.path.isfile(zipf), "--historial necesita --usuario y un zip que exista"
 print("MODO:", "EJECUCIÓN" if EXECUTE else "SIMULACIÓN (no se escribe nada)", "— PRUEBA en " + ROOT if PRUEBA else "")
@@ -186,7 +197,7 @@ if sosp:
         elif sim is None and sp is None and ver == "EQUIVOCADA" and (dif_isrc.get(k) or 0) > 10:
             equiv.append(k)
             print(f"  ❌ EQUIVOCADA: {k} → el audio es {quien} (sin datos de Spotify; {dif_isrc[k]} s distinto a su ISRC)")
-        elif not distinta and ((sim or 0) >= 0.85 or (sim is None and sp is not None and ver == "DESCONOCIDA")):
+        elif not distinta and (sim or 0) >= 0.85:   # 2 oct: sin vista previa ya no basta la duración → dudosa
             print(f"  ✓ es la de Spotify ({'parecido ' + str(sim) if sim else 'sin vista previa'}; {dur}): {k}")
         else:
             motivo = (f"misma grabación que la de Spotify pero dura {largo - sp:+.0f} s distinto (¿otra edición o cortada?)"
@@ -251,4 +262,11 @@ run("9a. documento de pendientes", ["python3", "revisar.py"])
 if not PRUEBA:
     run("9b. chequeo de salud", ["python3", os.path.join(SCRIPTS, "musica-salud.py")], check=False)
     run(f"9c. kit de recuperación actualizado ({KIT}: súbelo a la nube)", ["python3", "kit_recuperacion.py"], check=False)
+quedan = sorted(audios(os.path.join(ROOT, folder))) if os.path.isdir(os.path.join(ROOT, folder)) else []
+if quedan:   # 2 oct: una colisión en el reparto dejaba la canción fuera de todo y aun así decía «LISTO»
+    print(f"\n⚠️ NO TERMINÓ: {len(quedan)} canción(es) siguen en «{folder}» porque chocaron con un archivo que ya existe "
+          "(¿la misma canción con otro spotify_id?). Míralas y usa quitar_copia.py; el plan está en planes/plan-reparto.txt:")
+    for q in quedan[:10]:
+        print("   ", os.path.relpath(q, ROOT))
+    sys.exit(1)
 print(f"\nLISTO: {folder} procesada.")

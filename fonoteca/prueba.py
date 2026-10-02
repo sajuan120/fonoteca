@@ -37,6 +37,7 @@ import collections, datetime, json, os, re, shutil, sqlite3, subprocess, sys, ti
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mutagen import File as MFile
 from audio import abrir, es_audio
+from comun import dura_distinto
 from comun import ROOT, HERE, LOGS, SKIP, antra_abierto, cambiar_rutas, clave_artista, clave_titulo, es_de_album, sin_procesar, NAVIDROME_DB, LISTAS, SCRIPTS
 from red import Cache, pedir_json
 
@@ -44,8 +45,10 @@ PRUEBA = os.path.join(ROOT, "_Prueba")
 AUDIO = (".mp3", ".flac", ".m4a", ".ogg", ".opus")
 GENERO = "Prueba"
 DB = NAVIDROME_DB
-ESTADO = os.path.join(HERE, "prueba-estado.json")
-GENEROS_CACHE = os.path.join(HERE, "prueba-generos.json")   # carpeta del disco → [género real] ([] = no se supo)
+# 2 oct: bajo DATOS (= HERE en uso normal): en modo prueba se pisaba el estado REAL del embudo
+from comun import DATOS, RESPALDOS
+ESTADO = os.path.join(DATOS, "prueba-estado.json")
+GENEROS_CACHE = os.path.join(DATOS, "prueba-generos.json")   # carpeta del disco → [género real] ([] = no se supo)
 REVISAR_TODO = "--todo" in sys.argv   # marcar --todo: recalcula también las que ya tienen géneros (tras cambiar reglas)
 MAPPINGS = os.path.join(PRUEBA, ".mappings.json")
 SALIDA = os.path.join(LISTAS, "PARA-FLAC")
@@ -193,7 +196,7 @@ def indice_biblioteca():
             except Exception:
                 continue
             if t["isrc"]:
-                por_isrc.setdefault(t["isrc"], p)
+                por_isrc.setdefault(t["isrc"], (p, t["dur"]))
             por_clave.setdefault((clave_artista(t["artist"]), clave_titulo(t["title"])), []).append((p, t["dur"]))
     return por_isrc, por_clave
 
@@ -271,7 +274,11 @@ def revisar(execute):
         if indice is None:
             indice = indice_biblioteca()
         por_isrc, por_clave = indice
-        flac = por_isrc.get(c["t"]["isrc"]) if c["t"]["isrc"] else None
+        # 2 oct: ISRC + duración (la regla de siempre: un ISRC solo no alcanza, p. ej. Shakedown At Night 401 s vs 255 s)
+        x = por_isrc.get(c["t"]["isrc"]) if c["t"]["isrc"] else None
+        flac = x[0] if x and not dura_distinto(c["t"]["dur"], x[1]) else None
+        if x and not flac:
+            print(f"  ≠ mismo ISRC pero otra duración (no se reemplaza): {c['rel']} vs {os.path.relpath(x[0], ROOT)}")
         if not flac:
             cand = [p for p, dur in por_clave.get((clave_artista(c["t"]["artist"]), clave_titulo(c["t"]["title"])), [])
                     if abs(dur - c["t"]["dur"]) <= 3]
@@ -360,7 +367,7 @@ def revisar(execute):
                 if ab in cambio: l = os.path.relpath(cambio[ab], pl_dir)
                 out.append(l)
             if out != lineas:
-                shutil.copy2(mp, os.path.join(HERE, "respaldos", f"{m}.{stamp}"))
+                shutil.copy2(mp, os.path.join(RESPALDOS, f"{m}.{stamp}"))
                 open(mp, "w", encoding="utf-8").write("\n".join(out))
     log_adopcion, carpeta_adopcion = adoptar_mp3(adoptar, hoy, estado, log) if adoptar else (None, None)
     for d, dirs, fs in os.walk(PRUEBA, topdown=False):   # carpetas que quedaron vacías

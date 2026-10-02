@@ -305,7 +305,9 @@ def ia_portada(carpeta):
 
 def ia_preparar():
     lista = ia_discos()
-    if os.path.exists(SALIDA):
+    if os.path.exists(SALIDA):   # 2 oct: se borra entera, así que solo si es una comparación anterior
+        if os.listdir(SALIDA) and not os.path.exists(os.path.join(SALIDA, "ver todas.html")):
+            sys.exit(f"{SALIDA} tiene otras cosas (no es una comparación de carátulas): no la toco. Revisa rutas.portadas_ia.")
         shutil.rmtree(SALIDA)
     os.makedirs(os.path.join(SALIDA, "_versiones"))
     fuente = ImageFont.truetype(FUENTE, 34) if os.path.exists(FUENTE) else ImageFont.load_default()

@@ -27,7 +27,9 @@ import sys, shutil, time
 ARGS = sys.argv[1:]
 EXECUTE = "--execute" in ARGS
 LOG = ARGS[ARGS.index("--log") + 1] if "--log" in ARGS else __import__("comun").log_path("reorg")
-DISSOLVE = {a for i, a in enumerate(ARGS) if not a.startswith("--") and (i == 0 or ARGS[i - 1] != "--log")}
+DISSOLVE = {os.path.normpath(a) for i, a in enumerate(ARGS) if not a.startswith("--") and (i == 0 or ARGS[i - 1] != "--log")}
+if any(os.path.isabs(d) or os.sep in d or d.startswith("..") for d in DISSOLVE):   # 2 oct: «Carpeta/» o rutas raras
+    sys.exit(f"Las carpetas a repartir van sin «/» (una descarga de la raíz): {sorted(DISSOLVE)}")
 PLAYLISTS = sorted(DISSOLVE)   # carpetas-playlist de Antra (se disuelven al final)
 OUT = __import__("comun").plan_path("plan-reparto")
 BAD = str.maketrans({c: "_" for c in '/\\:*?"<>|'})
@@ -162,6 +164,8 @@ state_map = {}
 for ino in sorted(names, key=lambda i: sorted(names[i])[0]):
     rels = sorted(names[ino])
     tags = tags_of[ino]
+    if ino not in album_ino and not any(top(r) in DISSOLVE for r in rels):
+        continue   # 2 oct: de OTRA descarga pendiente (o suelta): no entra sin pasar por su propio procesado
     if ino in album_ino:
         dst, new_name = album_ino[ino], False
     else:

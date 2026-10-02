@@ -68,7 +68,13 @@ plan, problemas = [], []
 for dest, otras in grupos:
     if not os.path.isdir(dest):
         problemas.append(f"el destino no es una carpeta: {dest}"); continue
-    for o in otras:
+    if not os.path.realpath(dest).startswith(os.path.realpath(ROOT) + os.sep):
+        problemas.append(f"el destino no está dentro de la biblioteca: {dest}"); continue
+    for o in otras:   # 2 oct: el destino también en OTRAS (escrito distinto) lo mandaba ENTERO a respaldos como «copia»
+        if os.path.realpath(o) == os.path.realpath(dest) or os.path.realpath(o).startswith(os.path.realpath(dest) + os.sep):
+            problemas.append(f"el destino no puede estar también en las otras: {o}"); continue
+        if not os.path.realpath(o).startswith(os.path.realpath(ROOT) + os.sep):
+            problemas.append(f"no está dentro de la biblioteca: {o}"); continue
         if not os.path.exists(o): problemas.append(f"no existe: {o}")
         elif os.path.isdir(o) and [f for f in os.listdir(o) if not es_audio(f) and not f.startswith(".")]:
             problemas.append(f"hay otros archivos (no audio) en {o}: revisar a mano")
@@ -85,7 +91,9 @@ for dest, otras in grupos:
     final = os.path.join(os.path.dirname(dest), f"{fecha[:4]} - {album.translate(BAD)}" if fecha[:4].isdigit() else album.translate(BAD))
     if final != dest and os.path.exists(final):
         problemas.append(f"la carpeta final ya existe (¿otro disco con el mismo nombre?): {final}")
-    copias = {x["f"]: next((d["f"] for d in ds if misma(x, d)), None) for x in llegan}
+    if len({x["f"] for x in llegan}) != len(llegan):
+        problemas.append(f"una canción aparece dos veces en las otras: {dest}")
+    copias = {x["f"]: next((d["f"] for d in ds if d["f"] != x["f"] and misma(x, d)), None) for x in llegan}
     plan.append(dict(dest=dest, otras=otras, final=final, fecha=fecha, album=album, ds=ds, llegan=llegan, copias=copias,
                      org=t0.get("organization"), pic=(t0.pictures or [None])[0],
                      # Navidrome agrupa el disco por artista del disco (y su ID de MusicBrainz), nombre y fecha: se copian

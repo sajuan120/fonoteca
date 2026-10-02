@@ -80,7 +80,7 @@ def C(clave, etiqueta, tipo="texto", **kw):
     return {"clave": clave, "etiqueta": etiqueta, "tipo": tipo, **kw}
 
 def A(grupo, id_, nombre, texto, cmd, tipo="sim", campos=(), args=None, si=True, **kw):
-    if not si or (PRUEBA and kw.get("real")):   # real: toca Navidrome, Docker o internet de verdad aunque sea modo prueba
+    if not si or (PRUEBA and (kw.get("real") or kw.get("prueba") is False)):   # real: toca Navidrome, Docker o internet de verdad aunque sea modo prueba
         return
     a = {"grupo": grupo, "id": id_, "nombre": nombre, "texto": texto, "cmd": cmd, "tipo": tipo, "campos": list(campos),
          "args": args or (lambda v: []), **kw}
@@ -150,12 +150,12 @@ A("revision", "auditoria", "AUDITORÍA",
   args=lambda v: ["--sin-audio", "--sin-red"] if v["modo"] == "rapida" else [])
 A("revision", "salud", "CHEQUEO DE SALUD",
   "Navidrome igual al disco, descargas sin procesar, playlists sanas y espacio libre. Es el mismo de cada domingo.",
-  [os.path.join(SCRIPTS, "musica-salud.py")], tipo="lee", boton="CHEQUEAR",
+  [os.path.join(SCRIPTS, "musica-salud.py")], tipo="lee", boton="CHEQUEAR", prueba=False,
   si=os.path.isfile(os.path.join(SCRIPTS, "musica-salud.py")))
 A("revision", "banco", "BANCO DE PRUEBAS",
   "Corre el procesado completo sobre una biblioteca de mentira y comprueba cada paso (unos minutos). Después de cambiar "
   "cualquier script.",
-  ["banco_pruebas.py"], tipo="lee", boton="PROBAR", largo=True)
+  ["banco_pruebas.py"], tipo="lee", boton="PROBAR", largo=True, prueba=False)
 
 # 03 BIBLIOTECA
 A("biblioteca", "duplicados", "DUPLICADOS",
@@ -207,7 +207,7 @@ A("biblioteca", "devolver", "DEVOLVER A SUS PLAYLISTS",
 A("biblioteca", "nd", "NAVIDROME AL DÍA",
   "Escaneo, escuchas y estrellas de las rutas viejas a las nuevas (con los logs, en orden) y sin faltantes. El panel "
   "lo corre solo después de lo que mueve canciones; esto es por si quedó un log sin pasar.",
-  ["nd_actualizar.py"], tipo="directo", boton="PONER AL DÍA",
+  ["nd_actualizar.py"], tipo="directo", boton="PONER AL DÍA", prueba=False,
   campos=[C("logs", "LOGS", "logs", ayuda="opcional: logs con cambios de ruta, el más viejo primero"),
           C("usuario", "DUEÑO DE PLAYLIST", "usuario", ayuda="opcional: _Playlists/<Nombre>.m3u queda a su nombre")],
   args=lambda v: [*v["logs"], *_opt("--usuario", v["usuario"])])
@@ -242,7 +242,7 @@ A("mano", "numerar", "NUMERAR A MANO",
           C("deezer", "ID DE DEEZER", obligatorio=True, ayuda="solo números"),
           C("fijas", "A MANO", "lista", ayuda="opcional: Título=N")],
   args=lambda v: ["--a-mano", v["carpeta"], "--deezer", v["deezer"], *v["fijas"]],
-  validar=lambda v: None if v["deezer"].isdigit() else "El ID de Deezer son solo números.")
+  validar=lambda v: None if re.fullmatch(r"[0-9]+", v["deezer"]) else "El ID de Deezer son solo números.")
 
 # 05 EMBUDO (Octo-Fiesta)
 _embudo = os.path.isdir(os.path.join(ROOT, "_Prueba")) or bool(OCTO_COMPOSE)
@@ -368,7 +368,11 @@ def _casa(p):
     return "~" + p[len(h):] if p == h or p.startswith(h + os.sep) else p
 
 def _en_biblioteca(v):
-    return os.path.join(ROOT, v)   # una ruta absoluta queda igual
+    """La ruta dentro de la biblioteca, o None si se sale (2 oct: antes aceptaba /lo/que/sea y «../»)."""
+    if os.path.isabs(v):
+        return None
+    p = os.path.realpath(os.path.join(ROOT, v))
+    return p if p.startswith(os.path.realpath(ROOT) + os.sep) else None
 
 def preparar(a, crudos):
     """(canon, valores para armar el comando, error, falta). canon = los valores tal como se escribieron, en texto
@@ -390,7 +394,7 @@ def preparar(a, crudos):
             v = "" if x is None else str(x).strip()
             if t == "opcion" and v not in {o[0] for o in c["opciones"]}:
                 return None, None, f"{et}: elige una opción de la lista.", False
-            if t == "numero" and v and not (v.isdigit() and c.get("min", 0) <= int(v) <= c.get("max", 10 ** 9)):
+            if t == "numero" and v and not (re.fullmatch(r"[0-9]+", v) and c.get("min", 0) <= int(v) <= c.get("max", 10 ** 9)):
                 return None, None, f"{et}: un número entre {c.get('min', 0)} y {c.get('max', 10 ** 9)}.", False
         for s in v if isinstance(v, list) else [v]:
             if s.startswith("-"):
@@ -411,10 +415,13 @@ def preparar(a, crudos):
         elif t in ("carpeta", "carpetas", "descarga", "cancion", "rutas"):
             for s in v if isinstance(v, list) else ([v] if v else []):
                 p = _en_biblioteca(s)
+                if p is None:
+                    return None, None, f"{et}: va relativa a la biblioteca (Artista/Año - Álbum), sin «/» al principio ni «..».", False
                 ok = os.path.isfile(p) if t == "cancion" else (os.path.exists(p) if t == "rutas" else os.path.isdir(p))
                 if not ok:
                     return None, None, f"{et}: no está en la biblioteca: {s}", True
-            vx[k] = v
+            vx[k] = ([os.path.relpath(_en_biblioteca(x), os.path.realpath(ROOT)) for x in v] if isinstance(v, list)
+                     else os.path.relpath(_en_biblioteca(v), os.path.realpath(ROOT)) if v else v)   # normalizadas
         else:
             vx[k] = [os.path.expanduser(s) if s.startswith("~/") else s for s in v] if isinstance(v, list) else (
                 os.path.expanduser(v) if v.startswith("~/") else v)
@@ -493,6 +500,11 @@ class Trabajo:
             mueve = self.modo == "ejecutar" and self.a.get("navidrome")
             if mueve and PRUEBA:
                 self.sistema("(modo prueba: Navidrome no se toca)")
+            elif mueve and self.detener_pedido:   # 2 oct: antes callaba (y estos scripts escriben su log al final)
+                self.sistema("ATENCIÓN: se detuvo a mitad de mover canciones. Puede haber archivos movidos sin log o "
+                             "con nombre oculto (.tn-tmp-N). No corras nada más ni NAVIDROME AL DÍA: revisa la salida primero."
+                             + (" Logs que dejó: " + " ".join(_casa(p) for p in logs_de_cambios(self.inicio))
+                                if logs_de_cambios(self.inicio) else ""))
             elif mueve and not self.detener_pedido:
                 logs = logs_de_cambios(self.inicio)
                 if rc == 0 and logs:
@@ -1146,7 +1158,7 @@ a{color:inherit}
 .sello{justify-self:end;align-self:start;color:var(--carmesi2);letter-spacing:.12em;white-space:nowrap}
 .sello.dormido{color:var(--gris)}
 .sello{grid-column:3;grid-row:1}
-.donde{grid-column:3;grid-row:1;align-self:end;justify-self:end;color:var(--tenue);font-size:11px;letter-spacing:.16em}
+.donde{grid-column:3;grid-row:1;align-self:end;justify-self:end;color:var(--gris);font-size:11px;letter-spacing:.16em}
 
 /* telemetría */
 .tele{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:0 52px;margin-top:26px;
@@ -1201,7 +1213,7 @@ a{color:inherit}
 .entrada{position:relative}
 .campo input[type=text],.campo input[type=number],.campo select{width:100%;background:var(--hundido);
   border:1px solid var(--linea2);border-radius:0;padding:7px 9px;color:var(--hueso);outline:none}
-.campo input::placeholder{color:var(--tenue)}
+.campo input::placeholder{color:var(--gris)}
 .campo input:focus,.campo select:focus{border-color:var(--carmesi)}
 .campo.casilla{display:flex;align-items:center;gap:1ch;align-self:end;padding-bottom:7px}
 .campo.casilla label{color:var(--hueso2)}
@@ -1227,7 +1239,7 @@ input[type=checkbox]{accent-color:var(--carmesi);width:14px;height:14px;margin:0
 .cmd::before{content:"$ ";color:var(--carmesi2)}
 .cmd .ex{color:var(--tenue)}
 .cmd.falta::before{content:"· ";color:var(--tenue)}
-.cmd.falta{color:var(--tenue)}
+.cmd.falta{color:var(--gris)}
 .cmd.error{color:var(--alerta)}
 .cmd.error::before{content:"! ";color:var(--alerta)}
 .nota{color:var(--alerta);font-size:12px;margin-top:6px}
@@ -1454,7 +1466,7 @@ function inicial(a) {
   const v = {};
   for (const c of a.campos) v[c.clave] = c.defecto != null ? c.defecto : (c.tipo === 'casilla' ? false : (MULTI.has(c.tipo) || c.tipo === 'marcas' ? [] : ''));
   const g = leer('v:' + a.id, {});
-  for (const c of a.campos) if (c.clave in g) v[c.clave] = g[c.clave];
+  for (const c of a.campos) if (c.clave in g && !RUTA.has(c.tipo)) v[c.clave] = g[c.clave];
   return v;
 }
 function filaAccion(a) {
@@ -1473,7 +1485,8 @@ function filaAccion(a) {
   art.append(h('div', {class: 'cmd', id: 'cmd-' + a.id}), h('div', {class: 'nota', id: 'nota-' + a.id}));
   return art;
 }
-function cambiar(a, k, x) { V[a.id][k] = x; guardar('v:' + a.id, V[a.id]); $('#nota-' + a.id).textContent = ''; previsualizar(a); }
+const RUTA = new Set(['carpeta', 'carpetas', 'cancion', 'rutas', 'descarga', 'archivo', 'directorio', 'logs', 'lista']);
+function cambiar(a, k, x) { V[a.id][k] = x; guardar('v:' + a.id, Object.fromEntries(a.campos.filter(c => !RUTA.has(c.tipo)).map(c => [c.clave, V[a.id][c.clave]]))); $('#nota-' + a.id).textContent = ''; previsualizar(a); }
 function fuente(a, c) {
   if (c.tipo === 'persona') return async q => filtrar(CAT.contexto.personas, q);
   if (c.tipo === 'usuario') return async q => filtrar(CAT.contexto.usuarios, q);
@@ -1791,7 +1804,8 @@ function pintarEstado() {
     pintarPie();
   }
   // al abrir: la última acción (corriendo o terminada); después, solo una que empezó en otra ventana
-  if (e.trabajo && !T.solo && (primera ? !T.info : (e.trabajo.estado === 'corriendo' && (!T.info || T.info.id !== e.trabajo.id)))) adjuntar(e.trabajo);
+  if (e.trabajo && !T.solo && (primera ? !T.info : (e.trabajo.estado === 'corriendo' && (!T.info || T.info.id !== e.trabajo.id))))
+    adjuntar(e.trabajo, primera && e.trabajo.estado !== 'corriendo');   // 2 oct: sin «EJECUTAR DE VERDAD» de una simulación vieja
   primera = false;
 }
 function daemons(ds) {

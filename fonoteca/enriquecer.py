@@ -69,7 +69,10 @@ for i, f in enumerate(files):
     t = abrir(f); g = lambda k: (t.get(k) or [""])[0]
     new = {}
     isrc, artist, album = g("isrc"), g("artist"), g("album")
-    trk = (pedir_json(f"https://api.deezer.com/track/isrc:{isrc}", dz) or {}) if isrc else {}
+    trk = pedir_json(f"https://api.deezer.com/track/isrc:{isrc}", dz) if isrc else {}
+    if trk is None:   # 2 oct: sin respuesta ≠ «Deezer no tiene su ISRC» (dejaba la descarga entera como dudosa)
+        dz.guardar()
+        sys.exit("Deezer no responde (¿sin internet?): no escribí nada. Vuelve a correr cuando haya red.")
     # 1. duración
     if not trk.get("duration"):
         sospechosas.append(dict(archivo=os.path.relpath(f, ROOT), dif=None, isrc_es="(Deezer no tiene su ISRC)"))

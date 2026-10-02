@@ -20,6 +20,9 @@ from comun import ROOT, HERE, es_de_album, KIT, NAVIDROME, ANTRA, SCRIPTS
 
 DEST = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else KIT   # config.toml: rutas.kit
 SECRETO = re.compile(r"(token|secret|pass|cookie|auth|key|sp_dc|sid|session|bearer)", re.I)
+# 2 oct: al final se BORRA el kit anterior: solo si de verdad es un kit (una carpeta equivocada se perdía entera)
+if os.path.exists(DEST) and not os.path.isfile(os.path.join(DEST, "COMO-RECUPERAR.md")):
+    sys.exit(f"{DEST} existe y no es un kit de recuperación (no tiene COMO-RECUPERAR.md): no la toco. Revisa rutas.kit.")
 tmp = DEST + ".nuevo"
 shutil.rmtree(tmp, ignore_errors=True)
 os.makedirs(os.path.join(tmp, "playlists")); os.makedirs(os.path.join(tmp, "navidrome"))

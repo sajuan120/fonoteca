@@ -50,6 +50,10 @@ SCRIPTS = ruta("scripts", _scripts_repo if os.path.isdir(_scripts_repo) else "~/
 KIT = ruta("kit", "~/Respaldo-musica")                         # kit de recuperación
 PORTADAS_IA = ruta("portadas_ia", "~/portadas-IA")
 BANCO = ruta("banco", "/tmp/fonoteca-banco")                   # banco de pruebas
+if PRUEBA:   # 2 oct: en modo prueba lo que se ESCRIBE va a la carpeta de prueba (el panel de prueba rehacía el kit REAL)
+    KIT, PORTADAS_IA = os.path.join(DATOS, "kit"), os.path.join(DATOS, "portadas-IA")
+    if "MUSIC_LISTAS" not in os.environ:
+        LISTAS = os.path.join(DATOS, "listas")
 for _d in (LOGS, CACHE, RESPALDOS, PLANES, DECISIONES, *([DOCUMENTOS] if PRUEBA else [])):   # (sin archivos de decisiones todo funciona igual)
     os.makedirs(_d, exist_ok=True)
 
@@ -334,11 +338,13 @@ def parecido_spotify(sid, ruta):
                 return None
             urls = json.load(open(cu))
         hp = None
-        if urls.get(sid):
+        if urls.get(sid):   # 2 oct: -f (un 403/404 ya no llega como «archivo») y una huella fallida NO se guarda
             with tempfile.NamedTemporaryFile(suffix=".mp3") as t:
-                if subprocess.run(["curl", "-s", "--max-time", "30", "-o", t.name, urls[sid]]).returncode != 0:
+                if subprocess.run(["curl", "-fsS", "--max-time", "30", "-o", t.name, urls[sid]]).returncode != 0:
                     return None
                 hp = huella(t.name)
+            if not hp:
+                return None   # se reintenta la próxima vez; «sin vista previa» se guarda solo si Spotify no la tiene
         cache = json.load(open(c)) if os.path.exists(c) else {}
         cache[sid] = hp
         json.dump(cache, open(c, "w"))

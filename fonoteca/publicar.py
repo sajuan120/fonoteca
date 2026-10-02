@@ -24,6 +24,9 @@ args = sys.argv[1:]
 if not args or args[0].startswith("-"):
     sys.exit(__doc__)
 REPO = os.path.abspath(os.path.expanduser(args[0]))
+# 2 oct: al final borra de <REPO>/fonoteca, scripts y systemd lo que no copió: solo en el repositorio de fonoteca
+if os.path.isdir(REPO) and os.listdir(REPO) and not os.path.isfile(os.path.join(REPO, "fonoteca", "comun.py")):
+    sys.exit(f"{REPO} no parece el repositorio de fonoteca (no tiene fonoteca/comun.py): no toco nada.")
 EXECUTE = "--execute" in args
 SYSTEMD = os.path.expanduser("~/.config/systemd/user")
 NUNCA = {"config.toml", ".qobuz_token", ".acoustid_key", ".deezer_arl", ".robot", ".env"}

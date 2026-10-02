@@ -48,7 +48,7 @@ for d, _, fs in os.walk(ROOT):
             t = abrir(p)
         except Exception:
             continue
-        por_album[clave_titulo(g(t, "album"))] += 1
+        por_album[d] += 1   # 2 oct: por CARPETA del disco (antes por nombre: sumaba los «Greatest Hits» de 7 artistas)
         if g(t, "isrc"):
             por_isrc[g(t, "isrc").upper()].append(dict(path=p, secs=t.info.length, titulo=g(t, "title"), album=g(t, "album"),
                                                       rg=g(t, "musicbrainz_releasegroupid"), date=g(t, "date"),
@@ -80,7 +80,7 @@ for isrc, v in por_isrc.items():
         revisar.append((isrc, [os.path.relpath(x["path"], ROOT) for x in v]))
         continue
     for x in v:
-        x["score"] = (por_album[clave_titulo(x["album"])], escuchas[(clave_titulo(x["album"]), clave_titulo(x["titulo"]))],
+        x["score"] = (por_album[os.path.dirname(x["path"])], escuchas[(clave_titulo(x["album"]), clave_titulo(x["titulo"]))],
                       x["total"], -len(x["titulo"]))
     v.sort(key=lambda x: (not con_perdida(x["path"]), x["score"]), reverse=True)   # 28 sep: la SIN pérdida (FLAC) primero
     plan.append({"isrc": isrc, "queda": v[0], "sobran": v[1:]})
@@ -113,11 +113,13 @@ for p in plan:
         os.makedirs(os.path.dirname(os.path.join(dest, rel)), exist_ok=True)
         shutil.move(s["path"], os.path.join(dest, rel))
         mover[s["path"]] = q["path"]
-        if s["date"] and q["date"] and s["date"][:4] < q["date"][:4]:   # edición más antigua → ORIGINALDATE
-            t = abrir(q["path"])
-            if not t.get("originaldate"):
-                for f in [os.path.join(os.path.dirname(q["path"]), x) for x in os.listdir(os.path.dirname(q["path"])) if es_audio(x)]:
-                    tt = abrir(f); tt["originaldate"] = [s["date"]]; tt.save()
+        # edición más antigua DEL MISMO DISCO (mismo disco de MusicBrainz, p. ej. Clapton 1992 vs 2013) → ORIGINALDATE a
+        # las de ese disco que no la tengan. 2 oct: antes también con un sencillo, y a TODA la carpeta, pisando la que había
+        if s["rg"] and s["rg"] == q["rg"] and s["date"] and q["date"] and s["date"][:4] < q["date"][:4]:
+            for f in [os.path.join(os.path.dirname(q["path"]), x) for x in os.listdir(os.path.dirname(q["path"])) if es_audio(x)]:
+                tt = abrir(f)
+                if not tt.get("originaldate") and g(tt, "musicbrainz_releasegroupid") == q["rg"]:
+                    tt["originaldate"] = [s["date"]]; tt.save()
         # mismo disco con otro nombre → unir: las demás canciones del disco chico pasan al grande
         chica, grande = os.path.dirname(s["path"]), os.path.dirname(q["path"])
         if chica != grande and s["rg"] and s["rg"] == q["rg"] and os.path.isdir(chica):

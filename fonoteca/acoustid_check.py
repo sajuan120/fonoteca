@@ -12,15 +12,14 @@ Salida: acoustid-resultado-<fecha>.json. Clave en .acoustid_key junto a los scri
 import json, os, re, subprocess, sys, unicodedata, urllib.parse, urllib.request
 from audio import abrir
 
-from comun import ROOT, ACOUSTID_KEY as KEY, LOGS, log_path, titulo_base, primer_artista
+from comun import ROOT, ACOUSTID_KEY as KEY, LOGS, log_path, titulo_base, primer_artista, _calif, _VERSION
 from red import pedir_json
 
-VERSIONES = ("remix", "rmx", "live", "en vivo", "directo", "instrumental", "acoustic", "acustic", "demo", "sped up",
-             "slowed", "extended")
 def version(s):
-    """Qué versión dice el título (remix, en vivo, instrumental…); remaster/edit no cuentan (misma grabación o solo duración)."""
-    s = unicodedata.normalize("NFKD", (s or "").lower()); s = "".join(c for c in s if not unicodedata.combining(c))
-    return {w for w in VERSIONES if re.search(rf"\b{w}{'s?' if w in ('remix', 'instrumental', 'demo') else ''}\b", s)}
+    """Qué versión dice el título, con la regla única de comun (_calif: remix, mix, edit, live, dub, club, rework,
+    orchestral…; remaster/radio edit/feat. no cuentan). 2 oct: antes una lista propia sin mix/dub/club/rework/version
+    → un «Club Mix» con el audio de la original salía OK y el 3b no la comparaba con la vista previa."""
+    return {m for q in _calif(s or "") for m in _VERSION.findall(q)}
 
 from concurrent.futures import ThreadPoolExecutor
 PARTIAL = os.path.join(LOGS, "acoustid-parcial.json")

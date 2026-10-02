@@ -74,6 +74,9 @@ def huella():
 
 # ---------- armar ----------
 antes = huella()
+# 2 oct: se borra entera: solo si está vacía o es un banco anterior (tiene Music/ y datos/)
+if os.path.isdir(T) and os.listdir(T) and not (os.path.isdir(M) and os.path.isdir(D)):
+    sys.exit(f"{T} tiene otras cosas (no es un banco anterior): no la toco. Revisa rutas.banco en config.toml.")
 shutil.rmtree(T, ignore_errors=True)
 os.makedirs(os.path.join(M, "_Playlists")); os.makedirs(os.path.join(T, "listas", "Prueba")); os.makedirs(D)
 state = {}
