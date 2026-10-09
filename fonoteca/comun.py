@@ -191,9 +191,10 @@ def es_de_album(path):
     rel = os.path.relpath(path, ROOT)
     return rel.count(os.sep) >= 2 and rel.split(os.sep)[0] not in SKIP
 
-def borradas():
+def borradas(sin_sid=False):
     """Canciones borradas por borrar_canciones.py (corruptas/equivocadas), de logs/borradas-*/log.json (los dos formatos
-    de log): [{"ldir", "old" (ruta absoluta que tenía), "sid", "playlists": [...]}]. Sin spotify_id no se puede seguir."""
+    de log): [{"ldir", "old" (ruta absoluta que tenía), "sid", "playlists": [...]}]. Sin spotify_id no se puede seguir:
+    se dejan fuera, salvo con sin_sid=True (sid "") para nd_actualizar.py, que las da por quitadas a propósito."""
     import glob, json
     res = []
     for lj in sorted(glob.glob(os.path.join(LOGS, "borradas-*", "log.json"))):
@@ -202,7 +203,7 @@ def borradas():
         for x in l.get("borrados") or l.get("moved") or []:
             sid = x.get("spotify_id") or next((k.split(":", 2)[2] for k, v in state.items()
                                                if v == x["old"] and k.startswith("TRACK:spotify:")), "")
-            if sid:
+            if sid or sin_sid:
                 res.append({"ldir": os.path.dirname(lj), "old": x["old"], "sid": sid,
                             "playlists": (l.get("playlists") or {}).get(x["old"]) or []})
     return res

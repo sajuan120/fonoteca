@@ -17,7 +17,8 @@ Reglas (2 oct):
     la lista queda en logs/nd-sin-explicar-<fecha>.txt. Se revisa (¿dónde está hoy? → un log a mano, o
     `navidrome missing fix`) o, si de verdad se borró a propósito, --purgar-huerfanas.
   · Las borradas por borrar_canciones.py (corruptas/equivocadas) que esperan re-descarga se quedan «faltantes» con sus
-    reproducciones; si vuelven con otra ruta, sus reproducciones pasan a la nueva.
+    reproducciones; si vuelven con otra ruta, sus reproducciones pasan a la nueva. Las que no tenían spotify_id no se
+    pueden seguir: cuentan como quitadas a propósito y se purgan (4 oct: una de Apple frenaba el 8b).
   · Si la biblioteca parece vacía o desmontada (sin audio en el disco, o mucho menos que lo que Navidrome tiene), no se
     escanea siquiera: un escaneo así marca TODO como faltante.
   · Antes de escribir en la base, siempre una copia en respaldos/navidrome/.
@@ -76,7 +77,9 @@ def leer(lg):
 
 
 mapa, quitadas = {}, []   # ruta vieja → ruta final (absolutas), rutas quitadas a propósito
-_bs = borradas()
+_bs = borradas(sin_sid=True)
+quitadas += [b["old"] for b in _bs if not b["sid"]]   # 4 oct: borradas sin spotify_id (p. ej. de Apple): no hay re-descarga que esperar
+_bs = [b for b in _bs if b["sid"]]
 _hoy = rutas_por_sid({b["sid"] for b in _bs})
 esperando = sorted({rel(b["old"]) for b in _bs if b["sid"] not in _hoy})
 for b in _bs:   # borradas que volvieron con otra ruta: primero (los renombres de después encadenan encima)

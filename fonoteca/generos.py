@@ -110,6 +110,10 @@ for clave, c in votos.items():
         dudosos.append((clave, dict(c.most_common())))
 for a, g in FIJOS.items():
     genero.setdefault(a, [g])
+# 9 oct: una canción de OST sin votos (bajada a mano, sin género de Deezer) igual toma los géneros de SU artista
+for _, clave, _, _ in arch:
+    if isinstance(clave, tuple) and clave[0] == "OST" and clave[1] in genero:
+        genero.setdefault(clave, genero[clave[1]])
 for clave in [k for k in genero if isinstance(k, tuple) and k[0] == "OST"]:
     base = [g for g in (genero.get(clave[1]) or genero[clave]) if g != "Soundtrack"][:2]
     genero[clave] = base + ["Soundtrack"]
